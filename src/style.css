@@ -86,7 +86,8 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .icon-button { position: relative; width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid transparent; border-radius: 10px; color: var(--muted); background: transparent; transition: .18s ease; }
 .icon-button:hover { border-color: var(--line); color: var(--ink); background: var(--surface-soft); }
 .language-toggle { width: auto; padding: 0 10px; font-size: 11px; font-weight: 700; }
-.customize-button { width: auto; padding: 0 9px; font-size: 10px; font-weight: 600; }
+.customize-button { width: auto; padding: 0 9px; border-color: color-mix(in srgb, var(--accent) 26%, var(--line)); color: var(--accent-strong); background: var(--accent-soft); font-size: 10px; font-weight: 600; }
+.customize-button:hover { border-color: var(--accent); color: var(--accent-strong); background: color-mix(in srgb, var(--accent) 16%, var(--surface)); }
 .key-indicator { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border: 1.5px solid var(--surface); border-radius: 50%; background: #49b790; }
 
 .main-content { width: min(940px, calc(100% - 40px)); margin: 0 auto; padding: 57px 0 45px; }
