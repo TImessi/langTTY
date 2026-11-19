@@ -296,7 +296,6 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 @media (max-width: 360px) {
   .app-header { padding-inline: 9px; }
   .header-tagline { display: none; }
-  .customize-button { display: none; }
   .language-bar { grid-template-columns: minmax(0, 1fr) 34px minmax(0, 1fr); padding-inline: 8px; }
   .language-picker { min-width: 0; }
   .language-caption { font-size: 8px; }
