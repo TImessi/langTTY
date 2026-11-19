@@ -132,6 +132,7 @@ const copy = {
     enterKey: 'Enter an API key first.',
     invalidKey: 'Could not save an empty API key.',
     recordingUnsupported: 'Audio recording is not supported in this browser.',
+    silenceDetectionUnsupported: 'Automatic silence detection is not supported in this browser.',
     microphoneError: 'Could not access your microphone. Check browser permissions.',
     audioTooLarge: 'This recording is too large to transcribe. Please record a shorter clip.',
     emptyTranscript: 'No speech was detected. Try recording again.',
@@ -208,6 +209,7 @@ const copy = {
     enterKey: 'กรุณาใส่ API key ก่อน',
     invalidKey: 'ไม่สามารถบันทึก API key ที่ว่างเปล่าได้',
     recordingUnsupported: 'เบราว์เซอร์นี้ไม่รองรับการบันทึกเสียง',
+    silenceDetectionUnsupported: 'เบราว์เซอร์นี้ไม่รองรับการตรวจจับช่วงเงียบอัตโนมัติ',
     microphoneError: 'เข้าถึงไมโครโฟนไม่ได้ โปรดตรวจสอบสิทธิ์ของเบราว์เซอร์',
     audioTooLarge: 'ไฟล์บันทึกเสียงใหญ่เกินไป โปรดบันทึกคลิปที่สั้นลง',
     emptyTranscript: 'ไม่พบเสียงพูด ลองบันทึกอีกครั้ง',
@@ -259,6 +261,8 @@ const modelSettingsError = ref('')
 const modelUsage = ref(loadModelUsage())
 let mediaRecorder: MediaRecorder | null = null
 let mediaStream: MediaStream | null = null
+let recordingAudioContext: AudioContext | null = null
+let silenceDetectionTimer: ReturnType<typeof setInterval> | undefined
 let discardRecording = false
 let keySavedTimer: ReturnType<typeof setTimeout> | undefined
 let modelsSavedTimer: ReturnType<typeof setTimeout> | undefined
@@ -660,6 +664,54 @@ function restoreDefaultModels() {
   modelsSaved.value = false
 }
 
+function stopSilenceDetection() {
+  if (silenceDetectionTimer) {
+    clearInterval(silenceDetectionTimer)
+    silenceDetectionTimer = undefined
+  }
+  if (recordingAudioContext) {
+    const audioContext = recordingAudioContext
+    recordingAudioContext = null
+    if (audioContext.state !== 'closed') void audioContext.close()
+  }
+}
+
+function monitorRecordingSilence(stream: MediaStream, recorder: MediaRecorder) {
+  const audioContext = recordingAudioContext
+  if (!audioContext) throw new Error(t.value.silenceDetectionUnsupported)
+
+  const analyser = audioContext.createAnalyser()
+  analyser.fftSize = 2048
+  audioContext.createMediaStreamSource(stream).connect(analyser)
+  const samples = new Float32Array(analyser.fftSize)
+  let speechDetected = false
+  let silenceStartedAt: number | undefined
+
+  silenceDetectionTimer = setInterval(() => {
+    if (recorder.state !== 'recording') {
+      stopSilenceDetection()
+      return
+    }
+
+    analyser.getFloatTimeDomainData(samples)
+    const meanSquare = samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length
+    const now = Date.now()
+    if (Math.sqrt(meanSquare) >= 0.018) {
+      speechDetected = true
+      silenceStartedAt = undefined
+      return
+    }
+    if (!speechDetected) return
+
+    silenceStartedAt ??= now
+    if (now - silenceStartedAt >= 1500) {
+      isRecording.value = false
+      stopSilenceDetection()
+      recorder.stop()
+    }
+  }, 100)
+}
+
 async function translateText() {
   if (isTranslating.value || isGeneratingAudio.value) return
   const text = sourceText.value.trim()
@@ -759,6 +811,7 @@ async function transcribeAudio(blob: Blob) {
 
 async function toggleRecording() {
   if (isRecording.value) {
+    stopSilenceDetection()
     if (mediaRecorder?.state === 'recording') mediaRecorder.stop()
     isRecording.value = false
     return
@@ -772,8 +825,14 @@ async function toggleRecording() {
     errorMessage.value = t.value.recordingUnsupported
     return
   }
+  if (typeof window.AudioContext === 'undefined') {
+    errorMessage.value = t.value.silenceDetectionUnsupported
+    return
+  }
 
   try {
+    recordingAudioContext = new AudioContext()
+    await recordingAudioContext.resume()
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
     mediaStream = stream
     const preferredType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
@@ -787,6 +846,7 @@ async function toggleRecording() {
       if (event.data.size > 0) chunks.push(event.data)
     }
     recorder.onerror = () => {
+      stopSilenceDetection()
       stream.getTracks().forEach((track) => track.stop())
       mediaStream = null
       mediaRecorder = null
@@ -794,9 +854,11 @@ async function toggleRecording() {
       errorMessage.value = t.value.microphoneError
     }
     recorder.onstop = () => {
+      stopSilenceDetection()
       stream.getTracks().forEach((track) => track.stop())
       mediaStream = null
       mediaRecorder = null
+      isRecording.value = false
       const shouldTranscribe = !discardRecording
       discardRecording = false
       if (shouldTranscribe && chunks.length > 0) {
@@ -806,7 +868,13 @@ async function toggleRecording() {
     errorMessage.value = ''
     recorder.start()
     isRecording.value = true
+    monitorRecordingSilence(stream, recorder)
   } catch (error) {
+    stopSilenceDetection()
+    if (mediaRecorder?.state === 'recording') {
+      discardRecording = true
+      mediaRecorder.stop()
+    }
     mediaStream?.getTracks().forEach((track) => track.stop())
     mediaStream = null
     mediaRecorder = null
@@ -910,6 +978,7 @@ async function pasteText() {
 function clearText() {
   if (mediaRecorder?.state === 'recording') {
     discardRecording = true
+    stopSilenceDetection()
     mediaRecorder.stop()
     isRecording.value = false
   }
@@ -923,6 +992,7 @@ function clearText() {
 
 onBeforeUnmount(() => {
   discardRecording = true
+  stopSilenceDetection()
   if (mediaRecorder?.state === 'recording') {
     mediaRecorder.onstop = null
     mediaRecorder.ondataavailable = null
