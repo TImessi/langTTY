@@ -2,6 +2,8 @@
 
 langTTY is a browser-based translator built with Vue 3, TypeScript, Vite, and Tailwind CSS. It translates text and recorded speech with Gemini, then generates and plays spoken translations.
 
+**Try langTTY online:** [https://langtty.vercel.app](https://langtty.vercel.app)
+
 ## Features
 
 - Translate text between English, Thai, Vietnamese, Filipino, Indonesian, Spanish, French, Japanese, Korean, Chinese, and German.
