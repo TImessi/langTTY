@@ -91,6 +91,8 @@ const copy = {
     generatingAudio: 'Generating audio...',
     recording: 'Recording...',
     stopRecording: 'Stop recording',
+    cancel: 'Cancel',
+    cancelRecording: 'Cancel recording',
     transcribing: 'Transcribing...',
     clear: 'Clear',
     paste: 'Paste',
@@ -168,6 +170,8 @@ const copy = {
     generatingAudio: 'กำลังสร้างเสียง...',
     recording: 'กำลังบันทึก...',
     stopRecording: 'หยุดบันทึก',
+    cancel: 'ยกเลิก',
+    cancelRecording: 'ยกเลิกการบันทึก',
     transcribing: 'กำลังถอดเสียง...',
     clear: 'ล้าง',
     paste: 'วาง',
@@ -883,6 +887,17 @@ async function toggleRecording() {
   }
 }
 
+function cancelRecording() {
+  const recorder = mediaRecorder
+  if (!recorder || recorder.state !== 'recording') return
+
+  discardRecording = true
+  stopSilenceDetection()
+  recorder.stop()
+  isRecording.value = false
+  errorMessage.value = ''
+}
+
 async function generateSpeech(autoPlay = false) {
   if (!translatedText.value || isGeneratingAudio.value) return
   if (!apiKey.value) {
@@ -1141,14 +1156,19 @@ onBeforeUnmount(() => {
               @keydown.meta.enter="translateText"
             />
             <div class="panel-footer">
-              <button class="mic-button" :class="{ 'mic-active': isRecording }" :disabled="isTranscribing" :aria-label="isRecording ? t.stopRecording : t.speechInput" @click="toggleRecording">
-                <span class="mic-icon">
-                  <LoaderCircle v-if="isTranscribing" :size="15" class="spin" />
-                  <Mic v-else :size="16" />
-                </span>
-                <span>{{ isTranscribing ? t.transcribing : isRecording ? t.stopRecording : t.speechInput }}</span>
-                <span v-if="isRecording" class="recording-dot" />
-              </button>
+              <div class="speech-controls">
+                <button class="mic-button" :class="{ 'mic-active': isRecording }" :disabled="isTranscribing" :aria-label="isRecording ? t.stopRecording : t.speechInput" @click="toggleRecording">
+                  <span class="mic-icon">
+                    <LoaderCircle v-if="isTranscribing" :size="15" class="spin" />
+                    <Mic v-else :size="16" />
+                  </span>
+                  <span>{{ isTranscribing ? t.transcribing : isRecording ? t.stopRecording : t.speechInput }}</span>
+                  <span v-if="isRecording" class="recording-dot" />
+                </button>
+                <button v-if="isRecording" type="button" class="cancel-recording-button" :aria-label="t.cancelRecording" :title="t.cancelRecording" @click="cancelRecording">
+                  <X :size="14" /><span>{{ t.cancel }}</span>
+                </button>
+              </div>
               <span class="character-count">{{ sourceText.length }} / 5000</span>
             </div>
           </div>

@@ -146,8 +146,11 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .text-panel textarea::placeholder { color: var(--subtle); font-size: 13px; }
 .translated-input { overflow-wrap: anywhere; }
 .panel-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 28px; }
+.speech-controls { display: inline-flex; min-width: 0; align-items: center; gap: 4px; }
 .mic-button { display: inline-flex; align-items: center; gap: 7px; padding: 4px 7px 4px 3px; border: 0; border-radius: 7px; color: var(--muted); background: transparent; font-size: 10px; transition: .15s ease; }
 .mic-button:not(:disabled):hover { color: var(--accent); background: var(--accent-soft); }
+.cancel-recording-button { min-height: 32px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 7px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); background: var(--surface); font-size: 10px; transition: .15s ease; }
+.cancel-recording-button:hover { border-color: color-mix(in srgb, #db5e6f 40%, var(--line)); color: #db5e6f; background: color-mix(in srgb, #db5e6f 8%, var(--surface)); }
 .mic-icon, .speaker-icon { display: grid; width: 25px; height: 25px; place-items: center; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: var(--surface); }
 .mic-active { color: #db5e6f; }
 .mic-active .mic-icon { border-color: #f1ced2; color: #dc6271; background: #fff3f4; animation: pulse 1.4s ease infinite; }
@@ -283,6 +286,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   .select-wrap select { padding-right: 18px; overflow: hidden; text-overflow: ellipsis; }
   .text-panel { padding-inline: 12px; }
   .mic-button { min-height: 40px; }
+  .cancel-recording-button { min-height: 40px; }
   .swap-button { width: 36px; height: 36px; }
   .text-tool span { display: inline; }
   .translate-row { align-items: center; gap: 8px; padding-inline: 12px; }
