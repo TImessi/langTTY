@@ -13,6 +13,7 @@ import {
   Moon,
   Settings2,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Sun,
   Volume2,
@@ -953,7 +954,7 @@ onBeforeUnmount(() => {
           <Moon v-else :size="18" />
         </button>
         <button class="icon-button customize-button" :aria-label="t.customize" :title="t.customize" @click="showModelSettings = !showModelSettings">
-          <Settings2 :size="17" /><span class="customize-label">{{ t.customize }}</span>
+          <SlidersHorizontal :size="17" /><span class="customize-label">{{ t.customize }}</span>
         </button>
         <button class="icon-button settings-button" :aria-label="t.apiTitle" :title="t.apiTitle" @click="showSettings = !showSettings">
           <Settings2 :size="18" />
