@@ -1,3 +1,4 @@
+<!-- src/App.vue -->
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import {
@@ -11,17 +12,21 @@ import {
   LoaderCircle,
   Mic,
   Moon,
+  Pause,
+  Play,
   Settings2,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  Square,
   Sun,
   Volume2,
   X,
 } from '@lucide/vue'
+import { useWebSpeechTts } from './composables/useWebSpeechTts'
 
 type UiLanguage = 'en' | 'th'
-type ProviderId = 'google' | 'openai' | 'groq' | 'openrouter'
+type ProviderId = 'browser' | 'google' | 'openai' | 'groq' | 'openrouter'
 type TaskRole = 'translation' | 'transcription' | 'textToSpeech'
 
 interface Language {
@@ -36,7 +41,7 @@ interface ProviderDef {
   id: ProviderId
   name: string
   capabilities: TaskRole[]
-  defaults: Partial<Record<TaskRole, string>>
+  defaults: Record<TaskRole, string>
 }
 
 interface TaskConfig {
@@ -73,11 +78,21 @@ const languages: Language[] = [
 
 const providers: ProviderDef[] = [
   {
+    id: 'browser',
+    name: 'Browser Web Speech (Free / Offline)',
+    capabilities: ['textToSpeech'],
+    defaults: {
+      translation: '',
+      transcription: '',
+      textToSpeech: 'web-speech-api',
+    },
+  },
+  {
     id: 'google',
     name: 'Google Gemini',
     capabilities: ['translation', 'transcription', 'textToSpeech'],
     defaults: {
-      translation: 'gemini-4-hydrogen',
+      translation: 'gemini-3.1-flash-lite',
       transcription: 'gemini-3.5-transcribe',
       textToSpeech: 'gemini-3.8-flash-lite-tts',
     },
@@ -95,21 +110,26 @@ const providers: ProviderDef[] = [
   {
     id: 'groq',
     name: 'Groq',
-    capabilities: ['translation', 'transcription'],
+    capabilities: ['translation', 'transcription', 'textToSpeech'],
     defaults: {
       translation: 'llama-3.3-70b-versatile',
       transcription: 'whisper-large-v3',
+      textToSpeech: 'playai-tts',
     },
   },
   {
     id: 'openrouter',
     name: 'OpenRouter',
-    capabilities: ['translation'],
+    capabilities: ['translation', 'transcription', 'textToSpeech'],
     defaults: {
       translation: 'google/gemini-2.5-flash',
+      transcription: 'google/gemini-2.5-flash',
+      textToSpeech: 'heygen/heygen-voice-1-turbo:free',
     },
   },
 ]
+
+const apiKeyProviders = providers.filter((p) => p.id !== 'browser')
 
 const taskLabels: Record<TaskRole, { en: string; th: string }> = {
   translation: { en: 'Translation', th: 'แปลภาษา' },
@@ -120,7 +140,11 @@ const taskLabels: Record<TaskRole, { en: string; th: string }> = {
 const defaultTasks: Record<TaskRole, TaskConfig> = {
   translation: { provider: 'google', model: 'gemini-4-hydrogen' },
   transcription: { provider: 'google', model: 'gemini-3.5-transcribe' },
-  textToSpeech: { provider: 'google', model: 'gemini-3.8-flash-lite-tts' },
+  textToSpeech: { provider: 'browser', model: 'web-speech-api' },
+}
+
+function buildTranslationSystemPrompt(fromName: string, toName: string): string {
+  return `Translate the following text from ${fromName} to ${toName}. Return only the translation, preserving its meaning, tone, and formatting. Do not explain or add quotation marks.`
 }
 
 function providerById(id: ProviderId): ProviderDef {
@@ -164,7 +188,7 @@ const copy = {
     removeKey: 'Remove',
     customize: 'Customize',
     modelSettings: 'Task configuration',
-    modelHint: 'Choose a provider and model for each task. Only providers with an API key saved are available.',
+    modelHint: 'Choose a provider and model for each task. Browser TTS runs 100% locally without an API key.',
     providerLabel: 'Provider',
     modelLabel: 'Model',
     modelPlaceholder: 'Model ID',
@@ -210,6 +234,17 @@ const copy = {
     footer: 'Thoughtful translations, one conversation at a time.',
     noProviderForTask: 'No provider with an API key supports this task.',
     unsupportedTask: 'The selected provider does not support this task.',
+    voiceLabel: 'Voice',
+    speedLabel: 'Speed',
+    play: 'Play',
+    pause: 'Pause',
+    resume: 'Resume',
+    stop: 'Stop',
+    statusIdle: 'Ready',
+    statusSpeaking: 'Speaking',
+    statusPaused: 'Paused',
+    statusEnded: 'Finished',
+    statusUnsupported: 'Not supported in this browser',
   },
   th: {
     tagline: 'ภาษาเชื่อมโยงเราเข้าด้วยกัน',
@@ -243,7 +278,7 @@ const copy = {
     removeKey: 'ลบ',
     customize: 'ปรับแต่ง',
     modelSettings: 'ตั้งค่างาน',
-    modelHint: 'เลือกผู้ให้บริการและโมเดลสำหรับแต่ละงาน ใช้ได้เฉพาะผู้ให้บริการที่บันทึกคีย์แล้ว',
+    modelHint: 'เลือกผู้ให้บริการและโมเดลสำหรับแต่ละงาน (เสียงเบราว์เซอร์ทำงานในเครื่อง 100% ไม่ต้องใช้คีย์)',
     providerLabel: 'ผู้ให้บริการ',
     modelLabel: 'โมเดล',
     modelPlaceholder: 'Model ID',
@@ -289,8 +324,21 @@ const copy = {
     footer: 'ทุกบทสนทนาเริ่มต้นด้วยคำแปลที่เข้าใจความหมาย',
     noProviderForTask: 'ไม่มีผู้ให้บริการที่มี API key รองรับงานนี้',
     unsupportedTask: 'ผู้ให้บริการที่เลือกไม่รองรับงานนี้',
+    voiceLabel: 'เสียงพูด',
+    speedLabel: 'ความเร็ว',
+    play: 'เล่น',
+    pause: 'หยุดชั่วคราว',
+    resume: 'เล่นต่อ',
+    stop: 'หยุด',
+    statusIdle: 'พร้อมอ่าน',
+    statusSpeaking: 'กำลังอ่าน',
+    statusPaused: 'หยุดชั่วคราว',
+    statusEnded: 'อ่านจบแล้ว',
+    statusUnsupported: 'เบราว์เซอร์ไม่รองรับ',
   },
 } satisfies Record<UiLanguage, Record<string, string>>
+
+const browserTts = useWebSpeechTts()
 
 const uiLanguage = ref<UiLanguage>((localStorage.getItem('lingua-ui-language') as UiLanguage) || 'en')
 const darkMode = ref(localStorage.getItem('lingua-theme') === 'dark')
@@ -336,6 +384,24 @@ const sourceLanguageOption = computed(() => languages.find((language) => languag
 const targetLanguageOption = computed(() => languages.find((language) => language.code === targetLanguage.value) ?? languages[1]!)
 const uiLanguageName = computed(() => (uiLanguage.value === 'en' ? 'ไทย' : 'EN'))
 const hasAnyKey = computed(() => Object.values(apiKeys.value).some((k) => Boolean(k && k.trim())))
+const isBrowserTtsSelected = computed(() => taskConfigs.value.textToSpeech.provider === 'browser')
+
+const browserTtsStatusLabel = computed(() => {
+  switch (browserTts.state.value) {
+    case 'speaking':
+      return browserTts.totalChunks.value > 1
+        ? `${t.value.statusSpeaking} (${browserTts.currentChunkIndex.value}/${browserTts.totalChunks.value})`
+        : t.value.statusSpeaking
+    case 'paused':
+      return t.value.statusPaused
+    case 'ended':
+      return t.value.statusEnded
+    case 'unsupported':
+      return t.value.statusUnsupported
+    default:
+      return t.value.statusIdle
+  }
+})
 
 const taskRoles: TaskRole[] = ['translation', 'transcription', 'textToSpeech']
 
@@ -390,7 +456,7 @@ function loadApiKeys(): Partial<Record<ProviderId, string>> {
       return {}
     }
     const result: Partial<Record<ProviderId, string>> = {}
-    for (const p of providers) {
+    for (const p of apiKeyProviders) {
       const v = (stored as Record<string, unknown>)[p.id]
       if (typeof v === 'string' && v.trim()) result[p.id] = v.trim()
     }
@@ -410,7 +476,7 @@ function loadTaskConfigs(): Record<TaskRole, TaskConfig> {
         return {
           translation: { provider: 'google', model: typeof m.translation === 'string' && m.translation.trim() ? m.translation.trim() : defaultTasks.translation.model },
           transcription: { provider: 'google', model: typeof m.transcription === 'string' && m.transcription.trim() ? m.transcription.trim() : defaultTasks.transcription.model },
-          textToSpeech: { provider: 'google', model: typeof m.textToSpeech === 'string' && m.textToSpeech.trim() ? m.textToSpeech.trim() : defaultTasks.textToSpeech.model },
+          textToSpeech: { provider: 'browser', model: defaultTasks.textToSpeech.model },
         }
       }
       return cloneTasks(defaultTasks)
@@ -423,7 +489,9 @@ function loadTaskConfigs(): Record<TaskRole, TaskConfig> {
         const provider = typeof e.provider === 'string' && providers.some((p) => p.id === e.provider && p.capabilities.includes(role))
           ? (e.provider as ProviderId)
           : defaultTasks[role].provider
-        const model = typeof e.model === 'string' && e.model.trim() ? e.model.trim() : defaultTasks[role].model
+        const model = typeof e.model === 'string' && e.model.trim()
+          ? e.model.trim()
+          : providerById(provider).defaults[role] || defaultTasks[role].model
         return { provider, model }
       }
       return { ...defaultTasks[role] }
@@ -475,6 +543,7 @@ function readNumber(record: Record<string, unknown>, ...keys: string[]): number 
 }
 
 function getApiKey(providerId: ProviderId): string {
+  if (providerId === 'browser') return 'client-side'
   return apiKeys.value[providerId]?.trim() || ''
 }
 
@@ -542,6 +611,17 @@ function findAudioPart(value: unknown): { data: string; mimeType: string } | nul
   const record = readObject(value)
   if (!record) return null
 
+  const chatAudio = readObject(record.audio)
+  if (typeof chatAudio?.data === 'string' && chatAudio.data) {
+    return {
+      data: chatAudio.data,
+      mimeType: typeof chatAudio.mime_type === 'string'
+        ? chatAudio.mime_type
+        : typeof chatAudio.format === 'string'
+          ? `audio/${chatAudio.format}`
+          : 'audio/wav',
+    }
+  }
   const directAudio = readObject(record.output_audio) ?? readObject(record.outputAudio)
   if (typeof directAudio?.data === 'string') {
     return {
@@ -574,7 +654,7 @@ function findAudioPart(value: unknown): { data: string; mimeType: string } | nul
           : 'audio/wav',
     }
   }
-  for (const key of ['candidates', 'outputs', 'steps', 'content', 'parts']) {
+  for (const key of ['choices', 'message', 'candidates', 'outputs', 'steps', 'content', 'parts']) {
     if (record[key] !== undefined) {
       const audio = findAudioPart(record[key])
       if (audio) return audio
@@ -698,6 +778,16 @@ function apiError(response: Response, body: unknown): Error {
   return new Error(typeof error?.message === 'string' ? error.message : `API returned ${response.status}`)
 }
 
+function decodeBase64AudioBlob(audio: { data: string; mimeType: string }): Blob {
+  const base64 = audio.data.replace(/^data:[^,]*;base64,/, '')
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+  const mimeType = audio.mimeType.toLowerCase()
+  const pcmRate = Number(mimeType.match(/rate=(\d+)/i)?.[1]) || 24000
+  return mimeType.includes('pcm') || mimeType.includes('l16')
+    ? pcmAsWav(bytes, pcmRate)
+    : new Blob([bytes], { type: audio.mimeType })
+}
+
 async function googleInteraction(key: string, model: string, body: Record<string, unknown>): Promise<unknown> {
   const response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
     method: 'POST',
@@ -712,7 +802,7 @@ async function googleInteraction(key: string, model: string, body: Record<string
 async function googleTranslate(key: string, model: string, text: string, fromName: string, toName: string): Promise<{ text: string; response: unknown }> {
   const result = await googleInteraction(key, model, {
     input: [
-      { type: 'text', text: `Translate the following text from ${fromName} to ${toName}. Return only the translation, preserving its meaning, tone, and formatting. Do not explain or add quotation marks.` },
+      { type: 'text', text: buildTranslationSystemPrompt(fromName, toName) },
       { type: 'text', text },
     ],
   })
@@ -746,14 +836,7 @@ async function googleTts(key: string, model: string, text: string): Promise<{ au
   if (!response.ok) throw apiError(response, result)
   const audio = findAudioPart(result)
   if (!audio) throw new Error('The speech service returned no audio data.')
-  const base64 = audio.data.replace(/^data:[^,]*;base64,/, '')
-  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
-  const mimeType = audio.mimeType.toLowerCase()
-  const pcmRate = Number(mimeType.match(/rate=(\d+)/i)?.[1]) || 24000
-  const audioBlob = mimeType.includes('pcm') || mimeType.includes('l16')
-    ? pcmAsWav(bytes, pcmRate)
-    : new Blob([bytes], { type: audio.mimeType })
-  return { audioBlob, response: result }
+  return { audioBlob: decodeBase64AudioBlob(audio), response: result }
 }
 
 function openaiBaseUrl(providerId: ProviderId): string {
@@ -762,23 +845,27 @@ function openaiBaseUrl(providerId: ProviderId): string {
   return 'https://api.openai.com'
 }
 
-async function openaiChatTranslate(providerId: ProviderId, key: string, model: string, text: string, fromName: string, toName: string): Promise<{ text: string; response: unknown }> {
-  const base = openaiBaseUrl(providerId)
+function openaiHeaders(providerId: ProviderId, key: string, isJson = true): Record<string, string> {
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     Authorization: `Bearer ${key}`,
   }
+  if (isJson) headers['Content-Type'] = 'application/json'
   if (providerId === 'openrouter') {
     headers['HTTP-Referer'] = window.location.origin
     headers['X-Title'] = 'langTTY'
   }
+  return headers
+}
+
+async function openaiChatTranslate(providerId: ProviderId, key: string, model: string, text: string, fromName: string, toName: string): Promise<{ text: string; response: unknown }> {
+  const base = openaiBaseUrl(providerId)
   const response = await fetch(`${base}/v1/chat/completions`, {
     method: 'POST',
-    headers,
+    headers: openaiHeaders(providerId, key, true),
     body: JSON.stringify({
       model,
       messages: [
-        { role: 'system', content: `You are a translator. Translate the following text from ${fromName} to ${toName}. Return only the translation, preserving its meaning, tone, and formatting. Do not explain or add quotation marks.` },
+        { role: 'system', content: buildTranslationSystemPrompt(fromName, toName) },
         { role: 'user', content: text },
       ],
       temperature: 0.3,
@@ -795,6 +882,33 @@ async function openaiChatTranslate(providerId: ProviderId, key: string, model: s
 
 async function openaiTranscribe(providerId: ProviderId, key: string, model: string, audioBlob: Blob, langCode: string): Promise<{ text: string; response: unknown }> {
   const base = openaiBaseUrl(providerId)
+  if (providerId === 'openrouter') {
+    const base64 = await audioBase64(audioBlob)
+    const format = audioBlob.type.includes('mp4') ? 'mp4' : audioBlob.type.includes('webm') ? 'webm' : 'wav'
+    const response = await fetch(`${base}/v1/chat/completions`, {
+      method: 'POST',
+      headers: openaiHeaders(providerId, key, true),
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: `Transcribe this ${langCode} speech accurately. Return only the transcript text without explanation or quotation marks.` },
+              { type: 'input_audio', input_audio: { data: base64, format } },
+            ],
+          },
+        ],
+      }),
+    })
+    const result: unknown = await response.json().catch(() => null)
+    if (!response.ok) throw apiError(response, result)
+    const choices = readObject(result)?.choices
+    const firstChoice = Array.isArray(choices) && choices.length > 0 ? readObject(choices[0]) : null
+    const content = readObject(firstChoice?.message)?.content
+    return { text: typeof content === 'string' ? content.trim() : '', response: result }
+  }
+
   const form = new FormData()
   const ext = audioBlob.type.includes('wav') ? 'wav' : audioBlob.type.includes('mp4') ? 'm4a' : 'webm'
   form.append('file', audioBlob, `recording.${ext}`)
@@ -802,7 +916,7 @@ async function openaiTranscribe(providerId: ProviderId, key: string, model: stri
   form.append('language', langCode.split('-')[0]!)
   const response = await fetch(`${base}/v1/audio/transcriptions`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${key}` },
+    headers: openaiHeaders(providerId, key, false),
     body: form,
   })
   const result: unknown = await response.json().catch(() => null)
@@ -812,11 +926,14 @@ async function openaiTranscribe(providerId: ProviderId, key: string, model: stri
   return { text, response: result }
 }
 
-async function openaiTts(key: string, model: string, text: string): Promise<{ audioBlob: Blob; response: unknown }> {
-  const response = await fetch('https://api.openai.com/v1/audio/speech', {
+async function openaiSpeechTts(providerId: ProviderId, key: string, model: string, text: string): Promise<{ audioBlob: Blob; response: unknown }> {
+  const base = openaiBaseUrl(providerId)
+  const voice = providerId === 'groq' ? 'Fritz-PlayAI' : 'alloy'
+  const responseFormat = providerId === 'openrouter' ? 'mp3' : 'wav'
+  const response = await fetch(`${base}/v1/audio/speech`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-    body: JSON.stringify({ model, input: text, voice: 'alloy', response_format: 'mp3' }),
+    headers: openaiHeaders(providerId, key, true),
+    body: JSON.stringify({ model, input: text, voice, response_format: responseFormat }),
   })
   if (!response.ok) {
     const result: unknown = await response.json().catch(() => null)
@@ -826,6 +943,31 @@ async function openaiTts(key: string, model: string, text: string): Promise<{ au
   return { audioBlob, response: null }
 }
 
+async function openrouterTts(key: string, model: string, text: string): Promise<{ audioBlob: Blob; response: unknown }> {
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: openaiHeaders('openrouter', key, true),
+    body: JSON.stringify({
+      model,
+      modalities: ['text', 'audio'],
+      audio: { voice: 'alloy', format: 'wav' },
+      messages: [
+        { role: 'system', content: 'Read the user text aloud naturally without adding commentary.' },
+        { role: 'user', content: text },
+      ],
+    }),
+  })
+  const result: unknown = await response.json().catch(() => null)
+  if (!response.ok) throw apiError(response, result)
+  const audio = findAudioPart(result)
+  if (!audio) throw new Error('The speech service returned no audio data.')
+  return { audioBlob: decodeBase64AudioBlob(audio), response: result }
+}
+
+function isOpenrouterSpeechEndpointModel(model: string): boolean {
+  return /(^|\/)(tts|.*voice.*|.*speech.*)/i.test(model) && !/audio-mini|gpt-4o|gemini/i.test(model)
+}
+
 async function dispatchTranslation(text: string, fromName: string, toName: string): Promise<{ text: string; response: unknown; provider: ProviderId; model: string }> {
   const { provider, model } = taskConfigs.value.translation
   const key = getApiKey(provider)
@@ -833,6 +975,9 @@ async function dispatchTranslation(text: string, fromName: string, toName: strin
   if (provider === 'google') {
     const r = await googleTranslate(key, model, text, fromName, toName)
     return { ...r, provider, model }
+  }
+  if (provider === 'browser') {
+    throw new Error(t.value.unsupportedTask)
   }
   const r = await openaiChatTranslate(provider, key, model, text, fromName, toName)
   return { ...r, provider, model }
@@ -846,6 +991,9 @@ async function dispatchTranscription(audioBlob: Blob, speechCode: string, langCo
     const r = await googleTranscribe(key, model, audioBlob, speechCode)
     return { ...r, provider, model }
   }
+  if (provider === 'browser') {
+    throw new Error(t.value.unsupportedTask)
+  }
   const r = await openaiTranscribe(provider, key, model, audioBlob, langCode)
   return { ...r, provider, model }
 }
@@ -858,11 +1006,14 @@ async function dispatchTts(text: string): Promise<{ audioBlob: Blob; response: u
     const r = await googleTts(key, model, text)
     return { ...r, provider, model }
   }
-  if (provider === 'openai') {
-    const r = await openaiTts(key, model, text)
+  if (provider === 'openrouter') {
+    const r = isOpenrouterSpeechEndpointModel(model)
+      ? await openaiSpeechTts('openrouter', key, model, text)
+      : await openrouterTts(key, model, text)
     return { ...r, provider, model }
   }
-  throw new Error(t.value.unsupportedTask)
+  const r = await openaiSpeechTts(provider, key, model, text)
+  return { ...r, provider, model }
 }
 
 watch(
@@ -894,6 +1045,7 @@ function toggleUiLanguage() {
 
 function switchLanguages() {
   if (isTranslating.value || isGeneratingAudio.value) return
+  browserTts.stop()
   const previousTranslation = translatedText.value
   const previousSource = sourceLanguage.value
   sourceLanguage.value = targetLanguage.value
@@ -907,6 +1059,7 @@ function switchLanguages() {
 }
 
 function handleTranslationEdit() {
+  browserTts.stop()
   translationNeedsSpeech.value = true
   playbackNeedsUserAction.value = false
   revokeAudioUrl()
@@ -1061,6 +1214,7 @@ function monitorRecordingSilence(stream: MediaStream, recorder: MediaRecorder) {
 
 async function translateText() {
   if (isTranslating.value || isGeneratingAudio.value) return
+  browserTts.stop()
   const text = sourceText.value.trim()
   if (!hasAnyKey.value) {
     errorMessage.value = t.value.needKey
@@ -1102,7 +1256,14 @@ async function translateText() {
   } finally {
     isTranslating.value = false
   }
-  if (shouldGenerateSpeech) await generateSpeech(true)
+
+  if (shouldGenerateSpeech) {
+    if (isBrowserTtsSelected.value) {
+      playBrowserSpeech(true)
+    } else {
+      await generateSpeech(true)
+    }
+  }
 }
 
 async function transcribeAudio(blob: Blob) {
@@ -1238,8 +1399,21 @@ function cancelRecording() {
   errorMessage.value = ''
 }
 
+function playBrowserSpeech(immediate = false) {
+  if (!translatedText.value.trim()) return
+  errorMessage.value = ''
+  browserTts.play(translatedText.value, {
+    lang: targetLanguageOption.value.speechCode,
+    immediate,
+  })
+}
+
 async function generateSpeech(autoPlay = false) {
   if (!translatedText.value || isGeneratingAudio.value) return
+  if (isBrowserTtsSelected.value) {
+    playBrowserSpeech(autoPlay)
+    return
+  }
   if (!getTaskKey('textToSpeech')) {
     if (!autoPlay) {
       errorMessage.value = t.value.noProviderForTask
@@ -1306,6 +1480,7 @@ async function pasteText() {
 
 function clearText() {
   requestStopRecorder(true)
+  browserTts.stop()
   sourceText.value = ''
   translatedText.value = ''
   translationNeedsSpeech.value = false
@@ -1378,7 +1553,7 @@ onBeforeUnmount(() => {
             </div>
             <button type="button" class="close-settings" :aria-label="t.clear" @click="showSettings = false"><X :size="17" /></button>
           </div>
-          <div v-for="prov in providers" :key="prov.id" class="provider-key-row">
+          <div v-for="prov in apiKeyProviders" :key="prov.id" class="provider-key-row">
             <span class="provider-key-name">{{ prov.name }}</span>
             <form class="key-form" @submit.prevent="saveProviderKey(prov.id)">
               <input
@@ -1520,9 +1695,78 @@ onBeforeUnmount(() => {
               <audio v-if="audioUrl" ref="audioPlayer" class="tts-audio" :src="audioUrl" controls />
               <p v-if="playbackNeedsUserAction" class="playback-hint">{{ t.autoplayBlocked }}</p>
             </div>
+
             <div class="panel-footer result-footer">
+              <template v-if="isBrowserTtsSelected && translatedText">
+                <div class="browser-tts-box">
+                  <div class="browser-tts-controls">
+                    <button
+                      type="button"
+                      class="mic-button"
+                      :disabled="!browserTts.isSupported"
+                      @click="playBrowserSpeech(false)"
+                    >
+                      <Play :size="15" />
+                      <span>{{ t.play }}</span>
+                    </button>
+                    <button
+                      v-if="browserTts.state.value === 'speaking'"
+                      type="button"
+                      class="text-tool"
+                      @click="browserTts.pause()"
+                    >
+                      <Pause :size="14" />
+                      <span>{{ t.pause }}</span>
+                    </button>
+                    <button
+                      v-if="browserTts.state.value === 'paused'"
+                      type="button"
+                      class="text-tool"
+                      @click="browserTts.resume()"
+                    >
+                      <Play :size="14" />
+                      <span>{{ t.resume }}</span>
+                    </button>
+                    <button
+                      v-if="browserTts.state.value === 'speaking' || browserTts.state.value === 'paused'"
+                      type="button"
+                      class="text-tool"
+                      @click="browserTts.stop()"
+                    >
+                      <Square :size="14" />
+                      <span>{{ t.stop }}</span>
+                    </button>
+                    <span class="tts-status-badge">{{ browserTtsStatusLabel }}</span>
+                  </div>
+
+                  <div class="browser-tts-options">
+                    <label class="tts-inline-field">
+                      <span>{{ t.voiceLabel }}</span>
+                      <select v-model="browserTts.selectedVoiceURI.value" class="tts-mini-select">
+                        <option v-for="v in browserTts.voices.value" :key="v.voiceURI" :value="v.voiceURI">
+                          {{ v.name }} ({{ v.lang }})
+                        </option>
+                      </select>
+                    </label>
+
+                    <label class="tts-inline-field">
+                      <span>{{ t.speedLabel }}: {{ browserTts.rate.value.toFixed(1) }}x</span>
+                      <input
+                        type="range"
+                        min="0.5"
+                        max="2.0"
+                        step="0.1"
+                        :value="browserTts.rate.value"
+                        class="tts-rate-slider"
+                        @input="browserTts.setRate(Number(($event.target as HTMLInputElement).value))"
+                      />
+                    </label>
+                  </div>
+                </div>
+              </template>
+
               <button
-                v-if="(translationNeedsSpeech || audioUrl) && translatedText"
+                v-else-if="(translationNeedsSpeech || audioUrl) && translatedText"
                 type="button"
                 class="mic-button"
                 :disabled="isGeneratingAudio"
@@ -1535,6 +1779,7 @@ onBeforeUnmount(() => {
                 </span>
                 <span>{{ isGeneratingAudio ? t.generatingAudio : t.listen }}</span>
               </button>
+
               <span class="character-count">{{ translatedText.length ? `${translatedText.length} chars` : '' }}</span>
             </div>
           </div>
@@ -1590,8 +1835,8 @@ onBeforeUnmount(() => {
         <p class="usage-footnote">{{ t.usageBarHint }}</p>
       </section>
 
-      <p v-if="errorMessage" class="error-message" role="alert">
-        {{ errorMessage }}
+      <p v-if="errorMessage || browserTts.errorMessage.value" class="error-message" role="alert">
+        {{ errorMessage || browserTts.errorMessage.value }}
         <span v-if="isTtsQuotaExceeded" class="quota-links">
           <a href="https://aistudio.google.com/docs/rate-limits" target="_blank" rel="noopener noreferrer">{{ t.quotaDocs }}</a>
           <a href="https://ai.dev/rate-limit" target="_blank" rel="noopener noreferrer">{{ t.quotaDashboard }}</a>
@@ -1613,3 +1858,89 @@ onBeforeUnmount(() => {
     </footer>
   </div>
 </template>
+
+<style scoped>
+.task-field {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+
+.select-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+}
+
+.task-select-wrap {
+  width: 100%;
+  min-width: 317.5px;
+  height: 36px;
+}
+
+.select-wrap select {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 100%;
+  min-height: 36px;
+  padding-right: 1.75rem;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.select-wrap svg {
+  position: absolute;
+  right: 0.65rem;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.browser-tts-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.browser-tts-controls,
+.browser-tts-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tts-status-badge {
+  font-size: 0.78rem;
+  opacity: 0.85;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.tts-inline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+}
+
+.tts-mini-select {
+  padding: 0.25rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: transparent;
+  color: inherit;
+  font-size: 0.8rem;
+  max-width: 240px;
+}
+
+.tts-rate-slider {
+  width: 96px;
+  cursor: pointer;
+}
+</style>

@@ -322,7 +322,16 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   .language-bar { grid-template-columns: minmax(0, 1fr) 34px minmax(0, 1fr); padding-inline: 8px; }
   .language-picker { min-width: 0; }
   .language-caption { font-size: 8px; }
-  .select-wrap select { font-size: 10px; }
+  .select-wrap select {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  cursor: pointer;
+}
+
+.select-wrap svg {
+  pointer-events: none;
+}
   .text-tool { padding-inline: 3px; }
   .text-tool span { display: none; }
   .translate-button { min-width: 96px; padding-inline: 8px; }
