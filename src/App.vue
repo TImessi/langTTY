@@ -1869,50 +1869,12 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.task-field {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  min-width: 0;
-}
-
-.select-wrap {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  width: 100%;
-}
-
-.task-select-wrap {
-  width: 100%;
-  min-width: 317.5px;
-  height: 36px;
-}
-
-.select-wrap select {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 100%;
-  height: 100%;
-  min-height: 36px;
-  padding-right: 1.75rem;
-  box-sizing: border-box;
-  cursor: pointer;
-}
-
-.select-wrap svg {
-  position: absolute;
-  right: 0.65rem;
-  top: 50%;
-  transform: translateY(-50%);
-  pointer-events: none;
-}
-
 .browser-tts-box {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
   width: 100%;
+  min-width: 0;
 }
 
 .browser-tts-controls,
@@ -1929,23 +1891,6 @@ onBeforeUnmount(() => {
   padding: 0.15rem 0.5rem;
   border-radius: 999px;
   border: 1px solid rgba(148, 163, 184, 0.35);
-}
-
-.tts-inline-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.8rem;
-}
-
-.tts-mini-select {
-  padding: 0.25rem 0.5rem;
-  border-radius: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  background: transparent;
-  color: inherit;
-  font-size: 0.8rem;
-  max-width: 240px;
 }
 
 .tts-rate-slider {
