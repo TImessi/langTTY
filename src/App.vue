@@ -1,3 +1,4 @@
+<!-- App.vue -->
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import {
@@ -21,16 +22,32 @@ import {
 } from '@lucide/vue'
 
 type UiLanguage = 'en' | 'th'
+type ProviderId = 'google' | 'openai' | 'groq' | 'openrouter'
+type TaskRole = 'translation' | 'transcription' | 'textToSpeech'
 
 interface Language {
   code: string
   name: string
+  nameTh: string
   nativeName: string
   speechCode: string
 }
 
+interface ProviderDef {
+  id: ProviderId
+  name: string
+  capabilities: TaskRole[]
+  defaults: Partial<Record<TaskRole, string>>
+}
+
+interface TaskConfig {
+  provider: ProviderId
+  model: string
+}
+
 interface ModelTokenUsage {
   model: string
+  provider: ProviderId
   inputTokens: number
   outputTokens: number
   requests: number
@@ -41,39 +58,79 @@ interface ModelUsageRow extends ModelTokenUsage {
   share: number
 }
 
-interface ModelConfiguration {
-  translation: string
-  transcription: string
-  textToSpeech: string
-}
-
-type ModelRole = keyof ModelConfiguration
-
 const languages: Language[] = [
-  { code: 'en', name: 'English', nativeName: 'English', speechCode: 'en-US' },
-  { code: 'th', name: 'Thai', nativeName: 'ไทย', speechCode: 'th-TH' },
-  { code: 'vi', name: 'Vietnamese', nativeName: 'Tiếng Việt', speechCode: 'vi-VN' },
-  { code: 'fil', name: 'Filipino (Philippines)', nativeName: 'Filipino', speechCode: 'fil-PH' },
-  { code: 'id', name: 'Indonesian', nativeName: 'Bahasa Indonesia', speechCode: 'id-ID' },
-  { code: 'es', name: 'Spanish', nativeName: 'Español', speechCode: 'es-ES' },
-  { code: 'fr', name: 'French', nativeName: 'Français', speechCode: 'fr-FR' },
-  { code: 'ja', name: 'Japanese', nativeName: '日本語', speechCode: 'ja-JP' },
-  { code: 'ko', name: 'Korean', nativeName: '한국어', speechCode: 'ko-KR' },
-  { code: 'zh', name: 'Chinese (Simplified)', nativeName: '简体中文', speechCode: 'zh-CN' },
-  { code: 'de', name: 'German', nativeName: 'Deutsch', speechCode: 'de-DE' },
+  { code: 'en', name: 'English', nameTh: 'อังกฤษ', nativeName: 'English', speechCode: 'en-US' },
+  { code: 'th', name: 'Thai', nameTh: 'ไทย', nativeName: 'ไทย', speechCode: 'th-TH' },
+  { code: 'vi', name: 'Vietnamese', nameTh: 'เวียดนาม', nativeName: 'Tiếng Việt', speechCode: 'vi-VN' },
+  { code: 'fil', name: 'Filipino', nameTh: 'ฟิลิปปินส์', nativeName: 'Filipino', speechCode: 'fil-PH' },
+  { code: 'id', name: 'Indonesian', nameTh: 'อินโดนีเซีย', nativeName: 'Bahasa Indonesia', speechCode: 'id-ID' },
+  { code: 'es', name: 'Spanish', nameTh: 'สเปน', nativeName: 'Español', speechCode: 'es-ES' },
+  { code: 'fr', name: 'French', nameTh: 'ฝรั่งเศส', nativeName: 'Français', speechCode: 'fr-FR' },
+  { code: 'ja', name: 'Japanese', nameTh: 'ญี่ปุ่น', nativeName: '日本語', speechCode: 'ja-JP' },
+  { code: 'ko', name: 'Korean', nameTh: 'เกาหลี', nativeName: '한국어', speechCode: 'ko-KR' },
+  { code: 'zh', name: 'Chinese (Simplified)', nameTh: 'จีน (ตัวย่อ)', nativeName: '简体中文', speechCode: 'zh-CN' },
+  { code: 'de', name: 'German', nameTh: 'เยอรมัน', nativeName: 'Deutsch', speechCode: 'de-DE' },
 ]
 
-const defaultModels: ModelConfiguration = {
-  translation: 'gemini-4-hydrogen',
-  transcription: 'gemini-3.5-transcribe',
-  textToSpeech: 'gemini-3.8-flash-lite-tts',
+const providers: ProviderDef[] = [
+  {
+    id: 'google',
+    name: 'Google Gemini',
+    capabilities: ['translation', 'transcription', 'textToSpeech'],
+    defaults: {
+      translation: 'gemini-4-hydrogen',
+      transcription: 'gemini-3.5-transcribe',
+      textToSpeech: 'gemini-3.8-flash-lite-tts',
+    },
+  },
+  {
+    id: 'openai',
+    name: 'OpenAI',
+    capabilities: ['translation', 'transcription', 'textToSpeech'],
+    defaults: {
+      translation: 'gpt-4.1-nano',
+      transcription: 'gpt-4o-transcribe',
+      textToSpeech: 'tts-1',
+    },
+  },
+  {
+    id: 'groq',
+    name: 'Groq',
+    capabilities: ['translation', 'transcription'],
+    defaults: {
+      translation: 'llama-3.3-70b-versatile',
+      transcription: 'whisper-large-v3',
+    },
+  },
+  {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    capabilities: ['translation'],
+    defaults: {
+      translation: 'google/gemini-2.5-flash',
+    },
+  },
+]
+
+const taskLabels: Record<TaskRole, { en: string; th: string }> = {
+  translation: { en: 'Translation', th: 'แปลภาษา' },
+  transcription: { en: 'Speech to text', th: 'แปลงเสียงเป็นข้อความ' },
+  textToSpeech: { en: 'Text to speech', th: 'แปลงข้อความเป็นเสียง' },
 }
 
-const modelDefinitions: Array<{ key: ModelRole; label: string }> = [
-  { key: 'translation', label: 'Translation' },
-  { key: 'transcription', label: 'Speech to text' },
-  { key: 'textToSpeech', label: 'Text to speech' },
-]
+const defaultTasks: Record<TaskRole, TaskConfig> = {
+  translation: { provider: 'google', model: 'gemini-4-hydrogen' },
+  transcription: { provider: 'google', model: 'gemini-3.5-transcribe' },
+  textToSpeech: { provider: 'google', model: 'gemini-3.8-flash-lite-tts' },
+}
+
+function providerById(id: ProviderId): ProviderDef {
+  return providers.find((p) => p.id === id) ?? providers[0]!
+}
+
+function providersForTask(role: TaskRole): ProviderDef[] {
+  return providers.filter((p) => p.capabilities.includes(role))
+}
 
 const copy = {
   en: {
@@ -100,25 +157,23 @@ const copy = {
     copied: 'Copied!',
     speechInput: 'Record speech',
     speechHint: 'Tap the mic and start speaking',
-    poweredBy: 'Powered by Gemini',
-    apiTitle: 'Google AI Studio key',
-    apiHint: 'Your key stays in this tab and is sent only to Google AI Studio.',
-    apiPlaceholder: 'Paste your Gemini API key',
-    saveKey: 'Save key',
-    keySaved: 'Key saved for this session',
-    removeKey: 'Remove key',
+    apiKeys: 'API keys',
+    apiKeysHint: 'Add API keys for the providers you want to use. Keys stay in this tab.',
+    apiPlaceholder: 'Paste API key',
+    saveKey: 'Save',
+    keySaved: 'Saved',
+    removeKey: 'Remove',
     customize: 'Customize',
-    modelSettings: 'Customize models',
-    modelHint: 'Enter the Gemini model IDs to use for each task. Changes apply immediately after saving.',
-    translationModel: 'Translation model',
-    transcriptionModel: 'Speech-to-text model',
-    textToSpeechModel: 'Text-to-speech model',
-    modelPlaceholder: 'Gemini model ID',
-    saveModels: 'Save models',
+    modelSettings: 'Task configuration',
+    modelHint: 'Choose a provider and model for each task. Only providers with an API key saved are available.',
+    providerLabel: 'Provider',
+    modelLabel: 'Model',
+    modelPlaceholder: 'Model ID',
+    saveModels: 'Save config',
     resetModels: 'Restore defaults',
-    modelsSaved: 'Models saved for this session',
+    modelsSaved: 'Config saved for this session',
     invalidModels: 'Enter a model ID for all three tasks.',
-    needKey: 'Add your Google AI Studio key to get started.',
+    needKey: 'Add at least one API key to get started.',
     emptyInput: 'Type or speak something to translate first.',
     translationError: 'Translation failed. Check your key and try again.',
     speechUnsupported: 'Speech recognition is not available in this browser. Try Chrome or Edge.',
@@ -130,7 +185,7 @@ const copy = {
     themeLight: 'Switch to light mode',
     themeDark: 'Switch to dark mode',
     uiLanguage: 'Interface language',
-    privacyNote: 'Your words go directly to Google AI Studio for translation.',
+    privacyNote: 'Your words are sent directly to the selected API provider for processing.',
     enterKey: 'Enter an API key first.',
     invalidKey: 'Could not save an empty API key.',
     recordingUnsupported: 'Audio recording is not supported in this browser.',
@@ -147,13 +202,15 @@ const copy = {
     requests: 'requests',
     noUsage: 'Token usage will appear after the first request.',
     usageUnavailable: 'Token details unavailable',
-    usageBarHint: 'Bars show each model’s share of tracked tokens, not a quota.',
+    usageBarHint: 'Bars show each model\'s share of tracked tokens, not a quota.',
     ttsError: 'Could not generate speech audio.',
-    ttsQuotaError: 'Google rejected TTS because your account has no free-tier quota for this model. Enable billing or choose a model with quota available to your account.',
+    ttsQuotaError: 'The provider rejected TTS. Check your account quota or billing.',
     autoplayBlocked: 'Audio is ready. Press play in the audio player if your browser blocks autoplay.',
     quotaDocs: 'Rate limits and billing',
     quotaDashboard: 'Usage dashboard',
     footer: 'Thoughtful translations, one conversation at a time.',
+    noProviderForTask: 'No provider with an API key supports this task.',
+    unsupportedTask: 'The selected provider does not support this task.',
   },
   th: {
     tagline: 'ภาษาเชื่อมโยงเราเข้าด้วยกัน',
@@ -179,25 +236,23 @@ const copy = {
     copied: 'คัดลอกแล้ว!',
     speechInput: 'บันทึกเสียงพูด',
     speechHint: 'แตะไมโครโฟนแล้วเริ่มพูด',
-    poweredBy: 'ขับเคลื่อนด้วย Gemini',
-    apiTitle: 'คีย์ Google AI Studio',
-    apiHint: 'คีย์จะอยู่ในแท็บนี้และส่งไปยัง Google AI Studio เท่านั้น',
-    apiPlaceholder: 'วาง Gemini API key ของคุณ',
-    saveKey: 'บันทึกคีย์',
-    keySaved: 'บันทึกคีย์ไว้สำหรับเซสชันนี้แล้ว',
-    removeKey: 'ลบคีย์',
+    apiKeys: 'คีย์ API',
+    apiKeysHint: 'เพิ่ม API key ของผู้ให้บริการที่ต้องการใช้ คีย์จะอยู่ในแท็บนี้เท่านั้น',
+    apiPlaceholder: 'วาง API key',
+    saveKey: 'บันทึก',
+    keySaved: 'บันทึกแล้ว',
+    removeKey: 'ลบ',
     customize: 'ปรับแต่ง',
-    modelSettings: 'ปรับแต่งโมเดล',
-    modelHint: 'ป้อน Gemini model ID สำหรับแต่ละงาน การเปลี่ยนแปลงจะมีผลหลังบันทึก',
-    translationModel: 'โมเดลแปลภาษา',
-    transcriptionModel: 'โมเดลแปลงเสียงเป็นข้อความ',
-    textToSpeechModel: 'โมเดลแปลงข้อความเป็นเสียง',
-    modelPlaceholder: 'Gemini model ID',
-    saveModels: 'บันทึกโมเดล',
+    modelSettings: 'ตั้งค่างาน',
+    modelHint: 'เลือกผู้ให้บริการและโมเดลสำหรับแต่ละงาน ใช้ได้เฉพาะผู้ให้บริการที่บันทึกคีย์แล้ว',
+    providerLabel: 'ผู้ให้บริการ',
+    modelLabel: 'โมเดล',
+    modelPlaceholder: 'Model ID',
+    saveModels: 'บันทึกการตั้งค่า',
     resetModels: 'คืนค่าเริ่มต้น',
-    modelsSaved: 'บันทึกโมเดลไว้สำหรับเซสชันนี้แล้ว',
+    modelsSaved: 'บันทึกการตั้งค่าไว้สำหรับเซสชันนี้แล้ว',
     invalidModels: 'กรุณาป้อน model ID ให้ครบทั้งสามงาน',
-    needKey: 'เพิ่มคีย์ Google AI Studio เพื่อเริ่มใช้งาน',
+    needKey: 'เพิ่ม API key อย่างน้อยหนึ่งรายการเพื่อเริ่มใช้งาน',
     emptyInput: 'พิมพ์หรือพูดข้อความที่ต้องการแปลก่อน',
     translationError: 'แปลไม่สำเร็จ ตรวจสอบคีย์แล้วลองอีกครั้ง',
     speechUnsupported: 'เบราว์เซอร์นี้ไม่รองรับการรู้จำเสียง ลองใช้ Chrome หรือ Edge',
@@ -209,7 +264,7 @@ const copy = {
     themeLight: 'เปลี่ยนเป็นโหมดสว่าง',
     themeDark: 'เปลี่ยนเป็นโหมดมืด',
     uiLanguage: 'ภาษาของหน้าจอ',
-    privacyNote: 'ข้อความของคุณจะส่งตรงไปยัง Google AI Studio เพื่อแปลภาษา',
+    privacyNote: 'ข้อความของคุณจะส่งตรงไปยังผู้ให้บริการ API ที่เลือกเพื่อประมวลผล',
     enterKey: 'กรุณาใส่ API key ก่อน',
     invalidKey: 'ไม่สามารถบันทึก API key ที่ว่างเปล่าได้',
     recordingUnsupported: 'เบราว์เซอร์นี้ไม่รองรับการบันทึกเสียง',
@@ -228,11 +283,13 @@ const copy = {
     usageUnavailable: 'ไม่มีรายละเอียดโทเค็น',
     usageBarHint: 'แถบแสดงสัดส่วนโทเค็นของแต่ละโมเดล ไม่ใช่โควตา',
     ttsError: 'สร้างเสียงพูดไม่สำเร็จ',
-    ttsQuotaError: 'Google ปฏิเสธคำขอเสียงพูดเนื่องจากบัญชีไม่มีโควตาฟรีสำหรับโมเดลนี้ เปิดการเรียกเก็บเงินหรือเลือกโมเดลที่บัญชีของคุณมีโควตา',
+    ttsQuotaError: 'ผู้ให้บริการปฏิเสธคำขอเสียงพูด ตรวจสอบโควตาหรือการเรียกเก็บเงินของบัญชี',
     autoplayBlocked: 'เสียงพร้อมแล้ว หากเบราว์เซอร์ไม่เล่นอัตโนมัติ ให้กดเล่นในเครื่องเล่นเสียง',
     quotaDocs: 'ขีดจำกัดและการเรียกเก็บเงิน',
     quotaDashboard: 'แดชบอร์ดการใช้งาน',
     footer: 'ทุกบทสนทนาเริ่มต้นด้วยคำแปลที่เข้าใจความหมาย',
+    noProviderForTask: 'ไม่มีผู้ให้บริการที่มี API key รองรับงานนี้',
+    unsupportedTask: 'ผู้ให้บริการที่เลือกไม่รองรับงานนี้',
   },
 } satisfies Record<UiLanguage, Record<string, string>>
 
@@ -245,15 +302,15 @@ const translatedText = ref('')
 const audioUrl = ref('')
 const audioPlayer = ref<HTMLAudioElement | null>(null)
 const translationNeedsSpeech = ref(false)
-const apiKey = ref(sessionStorage.getItem('lingua-gemini-api-key') || '')
-const apiKeyDraft = ref(apiKey.value)
-const configuredModels = ref(loadModelConfiguration())
-const modelDraft = ref({ ...configuredModels.value })
+const apiKeys = ref<Partial<Record<ProviderId, string>>>(loadApiKeys())
+const apiKeyDrafts = ref<Partial<Record<ProviderId, string>>>({ ...apiKeys.value })
+const taskConfigs = ref<Record<TaskRole, TaskConfig>>(loadTaskConfigs())
+const taskDrafts = ref<Record<TaskRole, TaskConfig>>(cloneTasks(taskConfigs.value))
 const isTranslating = ref(false)
 const isRecording = ref(false)
 const isTranscribing = ref(false)
 const isGeneratingAudio = ref(false)
-const keySaved = ref(false)
+const keySavedFor = ref<ProviderId | null>(null)
 const modelsSaved = ref(false)
 const copied = ref(false)
 const errorMessage = ref('')
@@ -262,69 +319,119 @@ const playbackNeedsUserAction = ref(false)
 const showSettings = ref(false)
 const showModelSettings = ref(false)
 const modelSettingsError = ref('')
-const modelUsage = ref(loadModelUsage())
+const modelUsage = ref<ModelTokenUsage[]>(loadModelUsage())
+
 let mediaRecorder: MediaRecorder | null = null
 let mediaStream: MediaStream | null = null
 let recordingAudioContext: AudioContext | null = null
 let silenceDetectionTimer: ReturnType<typeof setInterval> | undefined
 let discardRecording = false
+let isStoppingRecorder = false
 let keySavedTimer: ReturnType<typeof setTimeout> | undefined
 let modelsSavedTimer: ReturnType<typeof setTimeout> | undefined
 let copiedTimer: ReturnType<typeof setTimeout> | undefined
 
 const t = computed(() => copy[uiLanguage.value])
+const localizedName = (lang: Language) => (uiLanguage.value === 'th' ? lang.nameTh : lang.name)
 const sourceLanguageOption = computed(() => languages.find((language) => language.code === sourceLanguage.value) ?? languages[0]!)
 const targetLanguageOption = computed(() => languages.find((language) => language.code === targetLanguage.value) ?? languages[1]!)
 const uiLanguageName = computed(() => (uiLanguage.value === 'en' ? 'ไทย' : 'EN'))
-const usageRows = computed<ModelUsageRow[]>(() => {
-  const knownModels = modelDefinitions.map((definition) => ({
-    model: configuredModels.value[definition.key],
-    label: definition.label,
-    usage: modelUsage.value.find((usage) => usage.model === configuredModels.value[definition.key]),
-  }))
-  const configuredIds = modelDefinitions.map((definition) => configuredModels.value[definition.key])
-  const otherModels = modelUsage.value
-    .filter((usage) => !configuredIds.includes(usage.model))
-    .map((usage) => ({ model: usage.model, label: usage.model, usage }))
-  const rows = [...knownModels, ...otherModels]
-  const totalTokens = modelUsage.value.reduce((sum, usage) => sum + usage.inputTokens + usage.outputTokens, 0)
+const hasAnyKey = computed(() => Object.values(apiKeys.value).some((k) => Boolean(k && k.trim())))
 
-  return rows.map(({ model, label, usage }) => ({
+const taskRoles: TaskRole[] = ['translation', 'transcription', 'textToSpeech']
+
+const usageRows = computed<ModelUsageRow[]>(() => {
+  const knownModels = taskRoles.map((role) => ({
+    model: taskConfigs.value[role].model,
+    provider: taskConfigs.value[role].provider,
+    label: taskLabels[role][uiLanguage.value],
+    usage: modelUsage.value.find((u) => u.model === taskConfigs.value[role].model && u.provider === taskConfigs.value[role].provider),
+  }))
+  const configuredIds = taskRoles.map((role) => `${taskConfigs.value[role].provider}:${taskConfigs.value[role].model}`)
+  const otherModels = modelUsage.value
+    .filter((u) => !configuredIds.includes(`${u.provider}:${u.model}`))
+    .map((u) => ({ model: u.model, provider: u.provider, label: `${providerById(u.provider).name} · ${u.model}`, usage: u }))
+  const rows = [...knownModels, ...otherModels]
+  const total = modelUsage.value.reduce((sum, u) => sum + u.inputTokens + u.outputTokens, 0)
+
+  return rows.map(({ model, provider, label, usage }) => ({
     model,
+    provider,
     label,
     inputTokens: usage?.inputTokens ?? 0,
     outputTokens: usage?.outputTokens ?? 0,
     requests: usage?.requests ?? 0,
-    share: totalTokens > 0 ? ((usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0)) / totalTokens * 100 : 0,
+    share: total > 0 ? (((usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0)) / total) * 100 : 0,
   }))
 })
-const totalInputTokens = computed(() => modelUsage.value.reduce((sum, usage) => sum + usage.inputTokens, 0))
-const totalOutputTokens = computed(() => modelUsage.value.reduce((sum, usage) => sum + usage.outputTokens, 0))
+
+const totalInputTokens = computed(() => modelUsage.value.reduce((sum, u) => sum + u.inputTokens, 0))
+const totalOutputTokens = computed(() => modelUsage.value.reduce((sum, u) => sum + u.outputTokens, 0))
 const totalTokens = computed(() => totalInputTokens.value + totalOutputTokens.value)
-const totalRequests = computed(() => modelUsage.value.reduce((sum, usage) => sum + usage.requests, 0))
+const totalRequests = computed(() => modelUsage.value.reduce((sum, u) => sum + u.requests, 0))
+
+function cloneTasks(tasks: Record<TaskRole, TaskConfig>): Record<TaskRole, TaskConfig> {
+  return {
+    translation: { ...tasks.translation },
+    transcription: { ...tasks.transcription },
+    textToSpeech: { ...tasks.textToSpeech },
+  }
+}
 
 function formatTokens(count: number): string {
   return new Intl.NumberFormat(uiLanguage.value === 'th' ? 'th-TH' : 'en-US').format(count)
 }
 
-function loadModelConfiguration(): ModelConfiguration {
+function loadApiKeys(): Partial<Record<ProviderId, string>> {
   try {
-    const stored: unknown = JSON.parse(sessionStorage.getItem('lingua-gemini-models') || 'null')
-    if (typeof stored !== 'object' || stored === null) return { ...defaultModels }
-    const record = stored as Record<string, unknown>
-    return {
-      translation: typeof record.translation === 'string' && record.translation.trim()
-        ? record.translation
-        : defaultModels.translation,
-      transcription: typeof record.transcription === 'string' && record.transcription.trim()
-        ? record.transcription
-        : defaultModels.transcription,
-      textToSpeech: typeof record.textToSpeech === 'string' && record.textToSpeech.trim()
-        ? record.textToSpeech
-        : defaultModels.textToSpeech,
+    const stored: unknown = JSON.parse(sessionStorage.getItem('lingua-api-keys') || 'null')
+    if (typeof stored !== 'object' || stored === null) {
+      const oldKey = sessionStorage.getItem('lingua-gemini-api-key')
+      if (oldKey?.trim()) return { google: oldKey.trim() }
+      return {}
     }
+    const result: Partial<Record<ProviderId, string>> = {}
+    for (const p of providers) {
+      const v = (stored as Record<string, unknown>)[p.id]
+      if (typeof v === 'string' && v.trim()) result[p.id] = v.trim()
+    }
+    return result
   } catch {
-    return { ...defaultModels }
+    return {}
+  }
+}
+
+function loadTaskConfigs(): Record<TaskRole, TaskConfig> {
+  try {
+    const stored: unknown = JSON.parse(sessionStorage.getItem('lingua-task-configs') || 'null')
+    if (typeof stored !== 'object' || stored === null) {
+      const oldModels: unknown = JSON.parse(sessionStorage.getItem('lingua-gemini-models') || 'null')
+      if (typeof oldModels === 'object' && oldModels !== null) {
+        const m = oldModels as Record<string, unknown>
+        return {
+          translation: { provider: 'google', model: typeof m.translation === 'string' && m.translation.trim() ? m.translation.trim() : defaultTasks.translation.model },
+          transcription: { provider: 'google', model: typeof m.transcription === 'string' && m.transcription.trim() ? m.transcription.trim() : defaultTasks.transcription.model },
+          textToSpeech: { provider: 'google', model: typeof m.textToSpeech === 'string' && m.textToSpeech.trim() ? m.textToSpeech.trim() : defaultTasks.textToSpeech.model },
+        }
+      }
+      return cloneTasks(defaultTasks)
+    }
+    const s = stored as Record<string, unknown>
+    const parse = (role: TaskRole): TaskConfig => {
+      const entry = s[role]
+      if (typeof entry === 'object' && entry !== null) {
+        const e = entry as Record<string, unknown>
+        const provider = typeof e.provider === 'string' && providers.some((p) => p.id === e.provider && p.capabilities.includes(role))
+          ? (e.provider as ProviderId)
+          : defaultTasks[role].provider
+        const model = typeof e.model === 'string' && e.model.trim() ? e.model.trim() : defaultTasks[role].model
+        return { provider, model }
+      }
+      return { ...defaultTasks[role] }
+    }
+    return { translation: parse('translation'), transcription: parse('transcription'), textToSpeech: parse('textToSpeech') }
+  } catch {
+    return cloneTasks(defaultTasks)
   }
 }
 
@@ -332,25 +439,32 @@ function loadModelUsage(): ModelTokenUsage[] {
   try {
     const stored: unknown = JSON.parse(sessionStorage.getItem('lingua-model-token-usage') || '[]')
     if (!Array.isArray(stored)) return []
-    return stored.filter((entry): entry is ModelTokenUsage =>
-      typeof entry === 'object' &&
-      entry !== null &&
-      'model' in entry &&
-      typeof entry.model === 'string' &&
-      'inputTokens' in entry &&
-      typeof entry.inputTokens === 'number' &&
-      'outputTokens' in entry &&
-      typeof entry.outputTokens === 'number' &&
-      'requests' in entry &&
-      typeof entry.requests === 'number',
-    )
+    return stored
+      .filter((entry): entry is ModelTokenUsage =>
+        typeof entry === 'object' &&
+        entry !== null &&
+        'model' in entry &&
+        typeof entry.model === 'string' &&
+        'inputTokens' in entry &&
+        typeof entry.inputTokens === 'number' &&
+        'outputTokens' in entry &&
+        typeof entry.outputTokens === 'number' &&
+        'requests' in entry &&
+        typeof entry.requests === 'number',
+      )
+      .map((entry) => ({
+        ...entry,
+        provider: typeof entry.provider === 'string' && providers.some((p) => p.id === entry.provider)
+          ? (entry.provider as ProviderId)
+          : 'google',
+      }))
   } catch {
     return []
   }
 }
 
 function readObject(value: unknown): Record<string, unknown> | null {
-  return typeof value === 'object' && value !== null ? value as Record<string, unknown> : null
+  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null
 }
 
 function readNumber(record: Record<string, unknown>, ...keys: string[]): number | undefined {
@@ -361,19 +475,27 @@ function readNumber(record: Record<string, unknown>, ...keys: string[]): number 
   return undefined
 }
 
-function trackModelUsage(model: string, response: unknown) {
+function getApiKey(providerId: ProviderId): string {
+  return apiKeys.value[providerId]?.trim() || ''
+}
+
+function getTaskKey(role: TaskRole): string {
+  return getApiKey(taskConfigs.value[role].provider)
+}
+
+function trackModelUsage(provider: ProviderId, model: string, response: unknown) {
   const responseObject = readObject(response)
   const usageObject = readObject(responseObject?.usage) ?? readObject(responseObject?.usageMetadata)
   const inputTokens = usageObject
-    ? readNumber(usageObject, 'total_input_tokens', 'totalInputTokens', 'promptTokenCount', 'inputTokenCount') ?? 0
+    ? readNumber(usageObject, 'total_input_tokens', 'totalInputTokens', 'promptTokenCount', 'inputTokenCount', 'prompt_tokens') ?? 0
     : 0
   const outputTokens = usageObject
-    ? readNumber(usageObject, 'total_output_tokens', 'totalOutputTokens', 'candidatesTokenCount', 'outputTokenCount') ?? 0
+    ? readNumber(usageObject, 'total_output_tokens', 'totalOutputTokens', 'candidatesTokenCount', 'outputTokenCount', 'completion_tokens') ?? 0
     : 0
   const total = usageObject ? readNumber(usageObject, 'total_tokens', 'totalTokens', 'totalTokenCount') : undefined
   const normalizedInput = inputTokens === 0 && outputTokens === 0 && total !== undefined ? total : inputTokens
   const normalizedOutput = inputTokens === 0 && outputTokens === 0 && total !== undefined ? 0 : outputTokens
-  const existing = modelUsage.value.find((usage) => usage.model === model)
+  const existing = modelUsage.value.find((u) => u.model === model && u.provider === provider)
 
   if (existing) {
     existing.inputTokens += normalizedInput
@@ -381,6 +503,7 @@ function trackModelUsage(model: string, response: unknown) {
     existing.requests += 1
   } else {
     modelUsage.value.push({
+      provider,
       model,
       inputTokens: normalizedInput,
       outputTokens: normalizedOutput,
@@ -487,25 +610,6 @@ function pcmAsWav(pcm: Uint8Array, sampleRate: number): Blob {
   return new Blob([wav], { type: 'audio/wav' })
 }
 
-function apiError(response: Response, body: unknown): Error {
-  const error = readObject(readObject(body)?.error)
-  return new Error(typeof error?.message === 'string' ? error.message : `Google AI Studio returned ${response.status}`)
-}
-
-async function createInteraction(model: string, body: Record<string, unknown>): Promise<unknown> {
-  const response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-goog-api-key': apiKey.value,
-    },
-    body: JSON.stringify({ model, store: false, ...body }),
-  })
-  const result: unknown = await response.json().catch(() => null)
-  if (!response.ok) throw apiError(response, result)
-  return result
-}
-
 function audioBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -527,16 +631,23 @@ function audioBase64(blob: Blob): Promise<string> {
 }
 
 async function normalizeAudioForTranscription(blob: Blob): Promise<Blob> {
-  const context = new AudioContext()
+  const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+  if (!AudioCtx) return blob
+
+  const context = new AudioCtx()
   let audio: AudioBuffer
   try {
     audio = await context.decodeAudioData(await blob.arrayBuffer())
+  } catch {
+    return blob
   } finally {
-    await context.close()
+    if (context.state !== 'closed') {
+      await context.close().catch(() => undefined)
+    }
   }
 
   const sampleRate = 24000
-  const sampleCount = Math.ceil(audio.length * sampleRate / audio.sampleRate)
+  const sampleCount = Math.max(1, Math.ceil((audio.length * sampleRate) / audio.sampleRate))
   const wav = new ArrayBuffer(44 + sampleCount * 2)
   const view = new DataView(wav)
   const writeString = (offset: number, value: string) => {
@@ -560,15 +671,16 @@ async function normalizeAudioForTranscription(blob: Blob): Promise<Blob> {
 
   const channels = Array.from({ length: audio.numberOfChannels }, (_, index) => audio.getChannelData(index))
   for (let index = 0; index < sampleCount; index += 1) {
-    const sourcePosition = index * audio.sampleRate / sampleRate
+    const sourcePosition = (index * audio.sampleRate) / sampleRate
     const leftIndex = Math.floor(sourcePosition)
     const rightIndex = Math.min(leftIndex + 1, audio.length - 1)
     const fraction = sourcePosition - leftIndex
-    const sample = channels.reduce((sum, channel) => {
-      const left = channel[leftIndex] ?? 0
-      const right = channel[rightIndex] ?? left
-      return sum + left + (right - left) * fraction
-    }, 0) / channels.length
+    const sample =
+      channels.reduce((sum, channel) => {
+        const left = channel[leftIndex] ?? 0
+        const right = channel[rightIndex] ?? left
+        return sum + left + (right - left) * fraction
+      }, 0) / Math.max(1, channels.length)
     const clamped = Math.max(-1, Math.min(1, sample))
     view.setInt16(44 + index * 2, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true)
   }
@@ -576,19 +688,203 @@ async function normalizeAudioForTranscription(blob: Blob): Promise<Blob> {
 }
 
 function revokeAudioUrl() {
-  if (audioUrl.value) URL.revokeObjectURL(audioUrl.value)
-  audioUrl.value = ''
+  if (audioUrl.value) {
+    URL.revokeObjectURL(audioUrl.value)
+    audioUrl.value = ''
+  }
 }
 
-watch(uiLanguage, (value) => {
-  localStorage.setItem('lingua-ui-language', value)
-  document.documentElement.lang = value
-  document.title = value === 'en' ? 'langTTY — Translator' : 'langTTY — แอปแปลภาษา'
-}, { immediate: true })
-watch(darkMode, (value) => {
-  localStorage.setItem('lingua-theme', value ? 'dark' : 'light')
-  document.documentElement.dataset.theme = value ? 'dark' : 'light'
-}, { immediate: true })
+function apiError(response: Response, body: unknown): Error {
+  const error = readObject(readObject(body)?.error)
+  return new Error(typeof error?.message === 'string' ? error.message : `API returned ${response.status}`)
+}
+
+async function googleInteraction(key: string, model: string, body: Record<string, unknown>): Promise<unknown> {
+  const response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+    body: JSON.stringify({ model, store: false, ...body }),
+  })
+  const result: unknown = await response.json().catch(() => null)
+  if (!response.ok) throw apiError(response, result)
+  return result
+}
+
+async function googleTranslate(key: string, model: string, text: string, fromName: string, toName: string): Promise<{ text: string; response: unknown }> {
+  const result = await googleInteraction(key, model, {
+    input: [
+      { type: 'text', text: `Translate the following text from ${fromName} to ${toName}. Return only the translation, preserving its meaning, tone, and formatting. Do not explain or add quotation marks.` },
+      { type: 'text', text },
+    ],
+  })
+  return { text: responseText(result), response: result }
+}
+
+async function googleTranscribe(key: string, model: string, audioBlob: Blob, speechCode: string): Promise<{ text: string; response: unknown }> {
+  const result = await googleInteraction(key, model, {
+    input: [{ type: 'audio', data: await audioBase64(audioBlob), mime_type: audioBlob.type || 'audio/wav' }],
+    generation_config: { transcription_config: { language_codes: [speechCode] } },
+  })
+  return { text: responseText(result), response: result }
+}
+
+async function googleTts(key: string, model: string, text: string): Promise<{ audioBlob: Blob; response: unknown }> {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text }] }],
+        generationConfig: {
+          responseModalities: ['AUDIO'],
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
+        },
+      }),
+    },
+  )
+  const result: unknown = await response.json().catch(() => null)
+  if (!response.ok) throw apiError(response, result)
+  const audio = findAudioPart(result)
+  if (!audio) throw new Error('The speech service returned no audio data.')
+  const base64 = audio.data.replace(/^data:[^,]*;base64,/, '')
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+  const mimeType = audio.mimeType.toLowerCase()
+  const pcmRate = Number(mimeType.match(/rate=(\d+)/i)?.[1]) || 24000
+  const audioBlob = mimeType.includes('pcm') || mimeType.includes('l16')
+    ? pcmAsWav(bytes, pcmRate)
+    : new Blob([bytes], { type: audio.mimeType })
+  return { audioBlob, response: result }
+}
+
+function openaiBaseUrl(providerId: ProviderId): string {
+  if (providerId === 'groq') return 'https://api.groq.com/openai'
+  if (providerId === 'openrouter') return 'https://openrouter.ai/api'
+  return 'https://api.openai.com'
+}
+
+async function openaiChatTranslate(providerId: ProviderId, key: string, model: string, text: string, fromName: string, toName: string): Promise<{ text: string; response: unknown }> {
+  const base = openaiBaseUrl(providerId)
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${key}`,
+  }
+  if (providerId === 'openrouter') {
+    headers['HTTP-Referer'] = window.location.origin
+    headers['X-Title'] = 'langTTY'
+  }
+  const response = await fetch(`${base}/v1/chat/completions`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: `You are a translator. Translate the following text from ${fromName} to ${toName}. Return only the translation, preserving its meaning, tone, and formatting. Do not explain or add quotation marks.` },
+        { role: 'user', content: text },
+      ],
+      temperature: 0.3,
+    }),
+  })
+  const result: unknown = await response.json().catch(() => null)
+  if (!response.ok) throw apiError(response, result)
+  const choices = readObject(result)?.choices
+  const firstChoice = Array.isArray(choices) && choices.length > 0 ? readObject(choices[0]) : null
+  const content = readObject(firstChoice?.message)?.content
+  const translated = typeof content === 'string' ? content.trim() : ''
+  return { text: translated, response: result }
+}
+
+async function openaiTranscribe(providerId: ProviderId, key: string, model: string, audioBlob: Blob, langCode: string): Promise<{ text: string; response: unknown }> {
+  const base = openaiBaseUrl(providerId)
+  const form = new FormData()
+  const ext = audioBlob.type.includes('wav') ? 'wav' : audioBlob.type.includes('mp4') ? 'm4a' : 'webm'
+  form.append('file', audioBlob, `recording.${ext}`)
+  form.append('model', model)
+  form.append('language', langCode.split('-')[0]!)
+  const response = await fetch(`${base}/v1/audio/transcriptions`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}` },
+    body: form,
+  })
+  const result: unknown = await response.json().catch(() => null)
+  if (!response.ok) throw apiError(response, result)
+  const rawText = readObject(result)?.text
+  const text = typeof rawText === 'string' ? rawText.trim() : ''
+  return { text, response: result }
+}
+
+async function openaiTts(key: string, model: string, text: string): Promise<{ audioBlob: Blob; response: unknown }> {
+  const response = await fetch('https://api.openai.com/v1/audio/speech', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+    body: JSON.stringify({ model, input: text, voice: 'alloy', response_format: 'mp3' }),
+  })
+  if (!response.ok) {
+    const result: unknown = await response.json().catch(() => null)
+    throw apiError(response, result)
+  }
+  const audioBlob = await response.blob()
+  return { audioBlob, response: null }
+}
+
+async function dispatchTranslation(text: string, fromName: string, toName: string): Promise<{ text: string; response: unknown; provider: ProviderId; model: string }> {
+  const { provider, model } = taskConfigs.value.translation
+  const key = getApiKey(provider)
+  if (!key) throw new Error(t.value.needKey)
+  if (provider === 'google') {
+    const r = await googleTranslate(key, model, text, fromName, toName)
+    return { ...r, provider, model }
+  }
+  const r = await openaiChatTranslate(provider, key, model, text, fromName, toName)
+  return { ...r, provider, model }
+}
+
+async function dispatchTranscription(audioBlob: Blob, speechCode: string, langCode: string): Promise<{ text: string; response: unknown; provider: ProviderId; model: string }> {
+  const { provider, model } = taskConfigs.value.transcription
+  const key = getApiKey(provider)
+  if (!key) throw new Error(t.value.needKey)
+  if (provider === 'google') {
+    const r = await googleTranscribe(key, model, audioBlob, speechCode)
+    return { ...r, provider, model }
+  }
+  const r = await openaiTranscribe(provider, key, model, audioBlob, langCode)
+  return { ...r, provider, model }
+}
+
+async function dispatchTts(text: string): Promise<{ audioBlob: Blob; response: unknown; provider: ProviderId; model: string }> {
+  const { provider, model } = taskConfigs.value.textToSpeech
+  const key = getApiKey(provider)
+  if (!key) throw new Error(t.value.needKey)
+  if (provider === 'google') {
+    const r = await googleTts(key, model, text)
+    return { ...r, provider, model }
+  }
+  if (provider === 'openai') {
+    const r = await openaiTts(key, model, text)
+    return { ...r, provider, model }
+  }
+  throw new Error(t.value.unsupportedTask)
+}
+
+watch(
+  uiLanguage,
+  (value) => {
+    localStorage.setItem('lingua-ui-language', value)
+    document.documentElement.lang = value
+    document.title = value === 'en' ? 'langTTY — Translator' : 'langTTY — แอปแปลภาษา'
+  },
+  { immediate: true },
+)
+
+watch(
+  darkMode,
+  (value) => {
+    localStorage.setItem('lingua-theme', value ? 'dark' : 'light')
+    document.documentElement.dataset.theme = value ? 'dark' : 'light'
+  },
+  { immediate: true },
+)
+
 watch(sourceLanguage, () => {
   errorMessage.value = ''
 })
@@ -617,43 +913,56 @@ function handleTranslationEdit() {
   revokeAudioUrl()
 }
 
-function saveApiKey() {
-  const key = apiKeyDraft.value.trim()
+function saveProviderKey(providerId: ProviderId) {
+  const key = apiKeyDrafts.value[providerId]?.trim() || ''
   if (!key) {
     errorMessage.value = t.value.invalidKey
     return
   }
-  apiKey.value = key
-  sessionStorage.setItem('lingua-gemini-api-key', key)
+  apiKeys.value = { ...apiKeys.value, [providerId]: key }
+  apiKeyDrafts.value = { ...apiKeyDrafts.value, [providerId]: key }
+  sessionStorage.setItem('lingua-api-keys', JSON.stringify(apiKeys.value))
   errorMessage.value = ''
-  keySaved.value = true
+  keySavedFor.value = providerId
   if (keySavedTimer) clearTimeout(keySavedTimer)
   keySavedTimer = setTimeout(() => {
-    keySaved.value = false
+    keySavedFor.value = null
   }, 2500)
 }
 
-function removeApiKey() {
-  apiKey.value = ''
-  apiKeyDraft.value = ''
-  sessionStorage.removeItem('lingua-gemini-api-key')
-  keySaved.value = false
+function removeProviderKey(providerId: ProviderId) {
+  const nextKeys = { ...apiKeys.value }
+  delete nextKeys[providerId]
+  apiKeys.value = nextKeys
+  apiKeyDrafts.value = { ...apiKeyDrafts.value, [providerId]: '' }
+  sessionStorage.setItem('lingua-api-keys', JSON.stringify(apiKeys.value))
+  if (keySavedFor.value === providerId) keySavedFor.value = null
 }
 
-function saveModelConfiguration() {
-  const models: ModelConfiguration = {
-    translation: modelDraft.value.translation.trim(),
-    transcription: modelDraft.value.transcription.trim(),
-    textToSpeech: modelDraft.value.textToSpeech.trim(),
+function saveTaskConfiguration() {
+  const configs: Record<TaskRole, TaskConfig> = {
+    translation: {
+      provider: taskDrafts.value.translation.provider,
+      model: taskDrafts.value.translation.model.trim(),
+    },
+    transcription: {
+      provider: taskDrafts.value.transcription.provider,
+      model: taskDrafts.value.transcription.model.trim(),
+    },
+    textToSpeech: {
+      provider: taskDrafts.value.textToSpeech.provider,
+      model: taskDrafts.value.textToSpeech.model.trim(),
+    },
   }
-  if (Object.values(models).some((model) => !model)) {
-    modelSettingsError.value = t.value.invalidModels
-    return
+  for (const role of taskRoles) {
+    if (!configs[role].model) {
+      modelSettingsError.value = t.value.invalidModels
+      return
+    }
   }
-
-  configuredModels.value = models
-  modelDraft.value = { ...models }
-  sessionStorage.setItem('lingua-gemini-models', JSON.stringify(models))
+  taskConfigs.value = configs
+  taskDrafts.value = cloneTasks(configs)
+  sessionStorage.setItem('lingua-task-configs', JSON.stringify(configs))
   modelSettingsError.value = ''
   modelsSaved.value = true
   if (modelsSavedTimer) clearTimeout(modelsSavedTimer)
@@ -662,10 +971,16 @@ function saveModelConfiguration() {
   }, 2500)
 }
 
-function restoreDefaultModels() {
-  modelDraft.value = { ...defaultModels }
+function restoreDefaultTasks() {
+  taskDrafts.value = cloneTasks(defaultTasks)
   modelSettingsError.value = ''
   modelsSaved.value = false
+}
+
+function onProviderChange(role: TaskRole) {
+  const provider = taskDrafts.value[role].provider
+  const prov = providerById(provider)
+  taskDrafts.value[role].model = prov.defaults[role] || ''
 }
 
 function stopSilenceDetection() {
@@ -676,7 +991,37 @@ function stopSilenceDetection() {
   if (recordingAudioContext) {
     const audioContext = recordingAudioContext
     recordingAudioContext = null
-    if (audioContext.state !== 'closed') void audioContext.close()
+    if (audioContext.state !== 'closed') {
+      void audioContext.close().catch(() => undefined)
+    }
+  }
+}
+
+function cleanupMediaResources() {
+  stopSilenceDetection()
+  if (mediaStream) {
+    mediaStream.getTracks().forEach((track) => track.stop())
+    mediaStream = null
+  }
+  mediaRecorder = null
+  isRecording.value = false
+  isStoppingRecorder = false
+}
+
+function requestStopRecorder(discard: boolean) {
+  discardRecording = discard
+  stopSilenceDetection()
+  const recorder = mediaRecorder
+  if (!recorder || recorder.state === 'inactive' || isStoppingRecorder) {
+    cleanupMediaResources()
+    return
+  }
+  isStoppingRecorder = true
+  isRecording.value = false
+  try {
+    recorder.stop()
+  } catch {
+    cleanupMediaResources()
   }
 }
 
@@ -686,13 +1031,14 @@ function monitorRecordingSilence(stream: MediaStream, recorder: MediaRecorder) {
 
   const analyser = audioContext.createAnalyser()
   analyser.fftSize = 2048
-  audioContext.createMediaStreamSource(stream).connect(analyser)
+  const sourceNode = audioContext.createMediaStreamSource(stream)
+  sourceNode.connect(analyser)
   const samples = new Float32Array(analyser.fftSize)
   let speechDetected = false
   let silenceStartedAt: number | undefined
 
   silenceDetectionTimer = setInterval(() => {
-    if (recorder.state !== 'recording') {
+    if (recorder.state !== 'recording' || isStoppingRecorder) {
       stopSilenceDetection()
       return
     }
@@ -700,7 +1046,7 @@ function monitorRecordingSilence(stream: MediaStream, recorder: MediaRecorder) {
     analyser.getFloatTimeDomainData(samples)
     const meanSquare = samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length
     const now = Date.now()
-    if (Math.sqrt(meanSquare) >= 0.018) {
+    if (Math.sqrt(meanSquare) >= 0.015) {
       speechDetected = true
       silenceStartedAt = undefined
       return
@@ -708,10 +1054,8 @@ function monitorRecordingSilence(stream: MediaStream, recorder: MediaRecorder) {
     if (!speechDetected) return
 
     silenceStartedAt ??= now
-    if (now - silenceStartedAt >= 1500) {
-      isRecording.value = false
-      stopSilenceDetection()
-      recorder.stop()
+    if (now - silenceStartedAt >= 1800) {
+      requestStopRecorder(false)
     }
   }, 100)
 }
@@ -719,8 +1063,13 @@ function monitorRecordingSilence(stream: MediaStream, recorder: MediaRecorder) {
 async function translateText() {
   if (isTranslating.value || isGeneratingAudio.value) return
   const text = sourceText.value.trim()
-  if (!apiKey.value) {
+  if (!hasAnyKey.value) {
     errorMessage.value = t.value.needKey
+    showSettings.value = true
+    return
+  }
+  if (!getTaskKey('translation')) {
+    errorMessage.value = t.value.noProviderForTask
     showSettings.value = true
     return
   }
@@ -739,19 +1088,12 @@ async function translateText() {
   let shouldGenerateSpeech = false
 
   try {
-    const model = configuredModels.value.translation
-    const result = await createInteraction(model, {
-      input: [
-        {
-          type: 'text',
-          text: `Translate the following text from ${sourceLanguageOption.value.name} to ${targetLanguageOption.value.name}. Return only the translation, preserving its meaning, tone, and formatting. Do not explain or add quotation marks.`,
-        },
-        { type: 'text', text },
-      ],
-    })
-    trackModelUsage(model, result)
-    const translated = responseText(result)
-
+    const { text: translated, response, provider, model } = await dispatchTranslation(
+      text,
+      sourceLanguageOption.value.name,
+      targetLanguageOption.value.name,
+    )
+    trackModelUsage(provider, model, response)
     if (!translated) throw new Error('The translation service returned an empty response.')
     translatedText.value = translated
     shouldGenerateSpeech = true
@@ -764,8 +1106,13 @@ async function translateText() {
 }
 
 async function transcribeAudio(blob: Blob) {
-  if (!apiKey.value) {
+  if (!hasAnyKey.value) {
     errorMessage.value = t.value.needKey
+    showSettings.value = true
+    return
+  }
+  if (!getTaskKey('transcription')) {
+    errorMessage.value = t.value.noProviderForTask
     showSettings.value = true
     return
   }
@@ -783,19 +1130,12 @@ async function transcribeAudio(blob: Blob) {
       errorMessage.value = t.value.audioTooLarge
       return
     }
-    const model = configuredModels.value.transcription
-    const result = await createInteraction(model, {
-      input: [{
-        type: 'audio',
-        data: await audioBase64(normalizedAudio),
-        mime_type: 'audio/wav',
-      }],
-      generation_config: {
-        transcription_config: { language_codes: [sourceLanguageOption.value.speechCode] },
-      },
-    })
-    trackModelUsage(model, result)
-    const transcript = responseText(result)
+    const { text: transcript, response, provider, model } = await dispatchTranscription(
+      normalizedAudio,
+      sourceLanguageOption.value.speechCode,
+      sourceLanguageOption.value.code,
+    )
+    trackModelUsage(provider, model, response)
     if (!transcript) {
       errorMessage.value = t.value.emptyTranscript
       return
@@ -814,13 +1154,11 @@ async function transcribeAudio(blob: Blob) {
 }
 
 async function toggleRecording() {
-  if (isRecording.value) {
-    stopSilenceDetection()
-    if (mediaRecorder?.state === 'recording') mediaRecorder.stop()
-    isRecording.value = false
+  if (isRecording.value || mediaRecorder?.state === 'recording') {
+    requestStopRecorder(false)
     return
   }
-  if (!apiKey.value) {
+  if (!hasAnyKey.value) {
     errorMessage.value = t.value.needKey
     showSettings.value = true
     return
@@ -829,16 +1167,28 @@ async function toggleRecording() {
     errorMessage.value = t.value.recordingUnsupported
     return
   }
-  if (typeof window.AudioContext === 'undefined') {
+  const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+  if (!AudioCtx) {
     errorMessage.value = t.value.silenceDetectionUnsupported
     return
   }
 
+  let ctx: AudioContext | null = null
+  let stream: MediaStream | null = null
+
   try {
-    recordingAudioContext = new AudioContext()
-    await recordingAudioContext.resume()
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    ctx = new AudioCtx()
+    recordingAudioContext = ctx
+    if (ctx.state === 'suspended') {
+      await ctx.resume()
+    }
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    if (recordingAudioContext !== ctx) {
+      stream.getTracks().forEach((track) => track.stop())
+      return
+    }
     mediaStream = stream
+
     const preferredType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
       .find((mimeType) => MediaRecorder.isTypeSupported(mimeType))
     const recorder = preferredType
@@ -846,108 +1196,69 @@ async function toggleRecording() {
       : new MediaRecorder(stream)
     const chunks: Blob[] = []
     mediaRecorder = recorder
+    isStoppingRecorder = false
+    discardRecording = false
+
     recorder.ondataavailable = (event) => {
       if (event.data.size > 0) chunks.push(event.data)
     }
     recorder.onerror = () => {
-      stopSilenceDetection()
-      stream.getTracks().forEach((track) => track.stop())
-      mediaStream = null
-      mediaRecorder = null
-      isRecording.value = false
+      cleanupMediaResources()
       errorMessage.value = t.value.microphoneError
     }
     recorder.onstop = () => {
-      stopSilenceDetection()
-      stream.getTracks().forEach((track) => track.stop())
-      mediaStream = null
-      mediaRecorder = null
-      isRecording.value = false
       const shouldTranscribe = !discardRecording
       discardRecording = false
+      const mime = recorder.mimeType || chunks[0]?.type || 'audio/webm'
+      cleanupMediaResources()
       if (shouldTranscribe && chunks.length > 0) {
-        void transcribeAudio(new Blob(chunks, { type: recorder.mimeType || chunks[0]?.type || 'audio/webm' }))
+        void transcribeAudio(new Blob(chunks, { type: mime }))
       }
     }
+
     errorMessage.value = ''
     recorder.start()
     isRecording.value = true
     monitorRecordingSilence(stream, recorder)
   } catch (error) {
-    stopSilenceDetection()
-    if (mediaRecorder?.state === 'recording') {
-      discardRecording = true
-      mediaRecorder.stop()
+    requestStopRecorder(true)
+    stream?.getTracks().forEach((track) => track.stop())
+    if (ctx && ctx.state !== 'closed') {
+      void ctx.close().catch(() => undefined)
     }
-    mediaStream?.getTracks().forEach((track) => track.stop())
-    mediaStream = null
-    mediaRecorder = null
-    isRecording.value = false
+    if (recordingAudioContext === ctx) recordingAudioContext = null
+    cleanupMediaResources()
     errorMessage.value = error instanceof Error ? `${t.value.microphoneError} (${error.message})` : t.value.microphoneError
   }
 }
 
 function cancelRecording() {
-  const recorder = mediaRecorder
-  if (!recorder || recorder.state !== 'recording') return
-
-  discardRecording = true
-  stopSilenceDetection()
-  recorder.stop()
-  isRecording.value = false
+  if (!mediaRecorder && !isRecording.value && !recordingAudioContext) return
+  requestStopRecorder(true)
   errorMessage.value = ''
 }
 
 async function generateSpeech(autoPlay = false) {
   if (!translatedText.value || isGeneratingAudio.value) return
-  if (!apiKey.value) {
-    errorMessage.value = t.value.needKey
-    showSettings.value = true
+  if (!getTaskKey('textToSpeech')) {
+    if (!autoPlay) {
+      errorMessage.value = t.value.noProviderForTask
+      showSettings.value = true
+    }
     return
   }
 
   isGeneratingAudio.value = true
-  errorMessage.value = ''
-  isTtsQuotaExceeded.value = false
+  if (!autoPlay) {
+    errorMessage.value = ''
+    isTtsQuotaExceeded.value = false
+  }
   playbackNeedsUserAction.value = false
   revokeAudioUrl()
+
   try {
-    const model = configuredModels.value.textToSpeech
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': apiKey.value,
-        },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{ text: translatedText.value }],
-          }],
-          generationConfig: {
-            responseModalities: ['AUDIO'],
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: 'Kore' },
-              },
-            },
-          },
-        }),
-      },
-    )
-    const result: unknown = await response.json().catch(() => null)
-    if (!response.ok) throw apiError(response, result)
-    trackModelUsage(model, result)
-    const audio = findAudioPart(result)
-    if (!audio) throw new Error('The speech service returned no audio data.')
-    const base64 = audio.data.replace(/^data:[^,]*;base64,/, '')
-    const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0))
-    const mimeType = audio.mimeType.toLowerCase()
-    const pcmRate = Number(mimeType.match(/rate=(\d+)/i)?.[1]) || 24000
-    const audioBlob = mimeType.includes('pcm') || mimeType.includes('l16')
-      ? pcmAsWav(bytes, pcmRate)
-      : new Blob([bytes], { type: audio.mimeType })
+    const { audioBlob, response, provider, model } = await dispatchTts(translatedText.value)
+    trackModelUsage(provider, model, response)
     audioUrl.value = URL.createObjectURL(audioBlob)
     translationNeedsSpeech.value = false
     if (autoPlay) {
@@ -960,8 +1271,11 @@ async function generateSpeech(autoPlay = false) {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : t.value.ttsError
-    isTtsQuotaExceeded.value = /quota exceeded|free tier|rate limit|429/i.test(message)
-    errorMessage.value = isTtsQuotaExceeded.value ? t.value.ttsQuotaError : message
+    const quotaExceeded = /quota exceeded|free tier|rate limit|429/i.test(message)
+    if (!autoPlay) {
+      isTtsQuotaExceeded.value = quotaExceeded
+      errorMessage.value = quotaExceeded ? t.value.ttsQuotaError : message
+    }
   } finally {
     isGeneratingAudio.value = false
   }
@@ -991,12 +1305,7 @@ async function pasteText() {
 }
 
 function clearText() {
-  if (mediaRecorder?.state === 'recording') {
-    discardRecording = true
-    stopSilenceDetection()
-    mediaRecorder.stop()
-    isRecording.value = false
-  }
+  requestStopRecorder(true)
   sourceText.value = ''
   translatedText.value = ''
   translationNeedsSpeech.value = false
@@ -1008,12 +1317,17 @@ function clearText() {
 onBeforeUnmount(() => {
   discardRecording = true
   stopSilenceDetection()
-  if (mediaRecorder?.state === 'recording') {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
     mediaRecorder.onstop = null
     mediaRecorder.ondataavailable = null
-    mediaRecorder.stop()
+    mediaRecorder.onerror = null
+    try {
+      mediaRecorder.stop()
+    } catch {
+      // ignore
+    }
   }
-  mediaStream?.getTracks().forEach((track) => track.stop())
+  cleanupMediaResources()
   revokeAudioUrl()
   if (keySavedTimer) clearTimeout(keySavedTimer)
   if (modelsSavedTimer) clearTimeout(modelsSavedTimer)
@@ -1030,7 +1344,6 @@ onBeforeUnmount(() => {
       </a>
       <p class="header-tagline hidden sm:block">{{ t.tagline }}</p>
       <div class="header-actions">
-        <span class="powered-badge hidden md:inline-flex"><Sparkles :size="13" /> {{ t.poweredBy }}</span>
         <button class="icon-button language-toggle" :aria-label="t.uiLanguage" :title="t.uiLanguage" @click="toggleUiLanguage">
           <Languages :size="17" /><span>{{ uiLanguageName }}</span>
         </button>
@@ -1041,9 +1354,9 @@ onBeforeUnmount(() => {
         <button class="icon-button customize-button" :aria-label="t.customize" :title="t.customize" @click="showModelSettings = !showModelSettings">
           <SlidersHorizontal :size="17" /><span class="customize-label">{{ t.customize }}</span>
         </button>
-        <button class="icon-button settings-button" :aria-label="t.apiTitle" :title="t.apiTitle" @click="showSettings = !showSettings">
+        <button class="icon-button settings-button" :aria-label="t.apiKeys" :title="t.apiKeys" @click="showSettings = !showSettings">
           <Settings2 :size="18" />
-          <span v-if="apiKey" class="key-indicator" />
+          <span v-if="hasAnyKey" class="key-indicator" />
         </button>
       </div>
     </header>
@@ -1060,29 +1373,32 @@ onBeforeUnmount(() => {
         <div class="settings-content">
           <div class="settings-heading">
             <div>
-              <h2>{{ t.apiTitle }}</h2>
-              <p>{{ t.apiHint }}</p>
+              <h2>{{ t.apiKeys }}</h2>
+              <p>{{ t.apiKeysHint }}</p>
             </div>
-            <button class="close-settings" :aria-label="t.clear" @click="showSettings = false"><X :size="17" /></button>
+            <button type="button" class="close-settings" :aria-label="t.clear" @click="showSettings = false"><X :size="17" /></button>
           </div>
-          <form class="key-form" @submit.prevent="saveApiKey">
-            <input
-              v-model="apiKeyDraft"
-              type="password"
-              autocomplete="off"
-              spellcheck="false"
-              class="key-input"
-              :placeholder="t.apiPlaceholder"
-              aria-label="Google AI Studio API key"
-            />
-            <button type="submit" class="save-key-button">{{ keySaved ? t.keySaved : t.saveKey }}</button>
-            <button v-if="apiKey" type="button" class="remove-key-button" @click="removeApiKey">{{ t.removeKey }}</button>
-          </form>
-          <p v-if="keySaved" class="key-saved-note"><Check :size="13" /> {{ t.keySaved }}</p>
+          <div v-for="prov in providers" :key="prov.id" class="provider-key-row">
+            <span class="provider-key-name">{{ prov.name }}</span>
+            <form class="key-form" @submit.prevent="saveProviderKey(prov.id)">
+              <input
+                v-model="apiKeyDrafts[prov.id]"
+                type="password"
+                autocomplete="off"
+                spellcheck="false"
+                class="key-input"
+                :placeholder="t.apiPlaceholder"
+                :aria-label="`${prov.name} API key`"
+              />
+              <button type="submit" class="save-key-button">{{ keySavedFor === prov.id ? t.keySaved : t.saveKey }}</button>
+              <button v-if="apiKeys[prov.id]" type="button" class="remove-key-button" @click="removeProviderKey(prov.id)">{{ t.removeKey }}</button>
+            </form>
+            <p v-if="keySavedFor === prov.id" class="key-saved-note"><Check :size="13" /> {{ t.keySaved }}</p>
+          </div>
         </div>
       </section>
 
-      <section v-if="showModelSettings" class="settings-card model-settings-card" aria-label="Model customization">
+      <section v-if="showModelSettings" class="settings-card model-settings-card" aria-label="Task configuration">
         <div class="settings-icon"><Settings2 :size="19" /></div>
         <div class="settings-content">
           <div class="settings-heading">
@@ -1090,23 +1406,29 @@ onBeforeUnmount(() => {
               <h2>{{ t.modelSettings }}</h2>
               <p>{{ t.modelHint }}</p>
             </div>
-            <button class="close-settings" :aria-label="t.clear" @click="showModelSettings = false"><X :size="17" /></button>
+            <button type="button" class="close-settings" :aria-label="t.clear" @click="showModelSettings = false"><X :size="17" /></button>
           </div>
-          <form class="model-form" @submit.prevent="saveModelConfiguration">
-            <label class="model-field">
-              <span>{{ t.translationModel }}</span>
-              <input v-model="modelDraft.translation" required spellcheck="false" :placeholder="t.modelPlaceholder" />
-            </label>
-            <label class="model-field">
-              <span>{{ t.transcriptionModel }}</span>
-              <input v-model="modelDraft.transcription" required spellcheck="false" :placeholder="t.modelPlaceholder" />
-            </label>
-            <label class="model-field">
-              <span>{{ t.textToSpeechModel }}</span>
-              <input v-model="modelDraft.textToSpeech" required spellcheck="false" :placeholder="t.modelPlaceholder" />
-            </label>
+          <form class="task-config-form" @submit.prevent="saveTaskConfiguration">
+            <div v-for="role in taskRoles" :key="role" class="task-config-block">
+              <span class="task-config-label">{{ taskLabels[role][uiLanguage] }}</span>
+              <div class="task-config-fields">
+                <label class="task-field">
+                  <span>{{ t.providerLabel }}</span>
+                  <span class="select-wrap task-select-wrap">
+                    <select v-model="taskDrafts[role].provider" @change="onProviderChange(role)">
+                      <option v-for="p in providersForTask(role)" :key="p.id" :value="p.id">{{ p.name }}</option>
+                    </select>
+                    <ChevronDown :size="13" />
+                  </span>
+                </label>
+                <label class="task-field">
+                  <span>{{ t.modelLabel }}</span>
+                  <input v-model="taskDrafts[role].model" required spellcheck="false" :placeholder="t.modelPlaceholder" />
+                </label>
+              </div>
+            </div>
             <div class="model-form-actions">
-              <button type="button" class="remove-key-button" @click="restoreDefaultModels">{{ t.resetModels }}</button>
+              <button type="button" class="remove-key-button" @click="restoreDefaultTasks">{{ t.resetModels }}</button>
               <button type="submit" class="save-key-button">{{ modelsSaved ? t.modelsSaved : t.saveModels }}</button>
             </div>
           </form>
@@ -1121,17 +1443,17 @@ onBeforeUnmount(() => {
             <span class="language-caption">{{ t.from }}</span>
             <span class="select-wrap">
               <select v-model="sourceLanguage" :aria-label="t.from">
-                <option v-for="language in languages" :key="language.code" :value="language.code">{{ language.nativeName }}</option>
+                <option v-for="language in languages" :key="language.code" :value="language.code">{{ localizedName(language) }}</option>
               </select>
               <ChevronDown :size="15" />
             </span>
           </label>
-          <button class="swap-button" :disabled="isTranslating || isGeneratingAudio" :aria-label="t.switchLanguages" :title="t.switchLanguages" @click="switchLanguages"><ArrowDownUp :size="16" /></button>
+          <button type="button" class="swap-button" :disabled="isTranslating || isGeneratingAudio" :aria-label="t.switchLanguages" :title="t.switchLanguages" @click="switchLanguages"><ArrowDownUp :size="16" /></button>
           <label class="language-picker">
             <span class="language-caption">{{ t.to }}</span>
             <span class="select-wrap">
               <select v-model="targetLanguage" :aria-label="t.to">
-                <option v-for="language in languages" :key="language.code" :value="language.code">{{ language.nativeName }}</option>
+                <option v-for="language in languages" :key="language.code" :value="language.code">{{ localizedName(language) }}</option>
               </select>
               <ChevronDown :size="15" />
             </span>
@@ -1141,10 +1463,10 @@ onBeforeUnmount(() => {
         <div class="translation-panels">
           <div class="text-panel source-panel">
             <div class="panel-topline">
-              <span class="panel-language">{{ sourceLanguageOption.name }}</span>
+              <span class="panel-language">{{ localizedName(sourceLanguageOption) }}</span>
               <div class="panel-tools">
-                <button class="text-tool" :title="t.paste" @click="pasteText"><Clipboard :size="14" /><span>{{ t.paste }}</span></button>
-                <button v-if="sourceText" class="text-tool" :title="t.clear" @click="clearText"><X :size="14" /><span>{{ t.clear }}</span></button>
+                <button type="button" class="text-tool" :title="t.paste" @click="pasteText"><Clipboard :size="14" /><span>{{ t.paste }}</span></button>
+                <button v-if="sourceText" type="button" class="text-tool" :title="t.clear" @click="clearText"><X :size="14" /><span>{{ t.clear }}</span></button>
               </div>
             </div>
             <textarea
@@ -1157,7 +1479,7 @@ onBeforeUnmount(() => {
             />
             <div class="panel-footer">
               <div class="speech-controls">
-                <button class="mic-button" :class="{ 'mic-active': isRecording }" :disabled="isTranscribing" :aria-label="isRecording ? t.stopRecording : t.speechInput" @click="toggleRecording">
+                <button type="button" class="mic-button" :class="{ 'mic-active': isRecording }" :disabled="isTranscribing" :aria-label="isRecording ? t.stopRecording : t.speechInput" @click="toggleRecording">
                   <span class="mic-icon">
                     <LoaderCircle v-if="isTranscribing" :size="15" class="spin" />
                     <Mic v-else :size="16" />
@@ -1175,9 +1497,9 @@ onBeforeUnmount(() => {
 
           <div class="text-panel result-panel" aria-live="polite">
             <div class="panel-topline">
-              <span class="panel-language">{{ targetLanguageOption.name }}</span>
+              <span class="panel-language">{{ localizedName(targetLanguageOption) }}</span>
               <div class="panel-tools">
-                <button v-if="translatedText" class="text-tool" :title="copied ? t.copied : t.copy" @click="copyTranslation">
+                <button v-if="translatedText" type="button" class="text-tool" :title="copied ? t.copied : t.copy" @click="copyTranslation">
                   <Check v-if="copied" :size="14" /><Clipboard v-else :size="14" />
                   <span>{{ copied ? t.copied : t.copy }}</span>
                 </button>
@@ -1201,6 +1523,7 @@ onBeforeUnmount(() => {
             <div class="panel-footer result-footer">
               <button
                 v-if="translationNeedsSpeech && translatedText"
+                type="button"
                 class="mic-button"
                 :disabled="isGeneratingAudio"
                 :aria-label="t.listen"
@@ -1219,7 +1542,7 @@ onBeforeUnmount(() => {
 
         <div class="translate-row">
           <span class="privacy-note"><ShieldCheck :size="14" />{{ t.privacyNote }}</span>
-          <button class="translate-button" :disabled="isTranslating || isGeneratingAudio" @click="translateText">
+          <button type="button" class="translate-button" :disabled="isTranslating || isGeneratingAudio" @click="translateText">
             <LoaderCircle v-if="isTranslating" :size="16" class="spin" />
             <Sparkles v-else :size="16" />
             {{ isTranslating ? t.translating : t.translate }}
@@ -1227,7 +1550,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <section class="usage-card" aria-label="Gemini model token usage">
+      <section class="usage-card" aria-label="Token usage">
         <div class="usage-heading">
           <div class="usage-title-group">
             <span class="usage-icon"><Sparkles :size="16" /></span>
@@ -1246,10 +1569,10 @@ onBeforeUnmount(() => {
           <span><i class="usage-legend output-legend" />{{ t.outputTokens }} <strong>{{ formatTokens(totalOutputTokens) }}</strong></span>
         </div>
         <div class="usage-model-list">
-          <div v-for="row in usageRows" :key="row.model" class="usage-model">
+          <div v-for="row in usageRows" :key="`${row.provider}:${row.model}`" class="usage-model">
             <div class="usage-model-heading">
               <span class="usage-model-name">{{ row.label }}</span>
-              <span class="usage-model-id">{{ row.model }}</span>
+              <span class="usage-model-id">{{ providerById(row.provider).name }} · {{ row.model }}</span>
               <span class="usage-model-total">{{ formatTokens(row.inputTokens + row.outputTokens) }}</span>
             </div>
             <div class="usage-track" role="progressbar" :aria-label="`${row.model} token usage share`" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="Math.round(row.share)">
