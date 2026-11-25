@@ -124,7 +124,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .task-config-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .task-field { min-width: 0; display: grid; gap: 5px; }
 .task-field > span:first-child { color: var(--text); font-size: 9px; font-weight: 600; }
-.task-field input { width: 100%; height: 36px; min-width: 0; padding: 0 9px; border: 1px solid var(--line); border-radius: 8px; outline: 0; color: var(--ink); background: var(--surface); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
+.task-field input { width: 100%; height: 36px; min-width: 0; padding: 0 9px; border: 1px solid color-mix(in srgb, var(--subtle) 42%, var(--line)); border-radius: 8px; outline: 0; color: var(--ink); background: var(--surface); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
 .task-field input::placeholder { color: var(--subtle); font-family: 'DM Sans', 'Noto Sans Thai', sans-serif; }
 .task-field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
 .select-wrap.task-select-wrap {
@@ -139,7 +139,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   height: 100%;
   min-width: 0;
   padding: 0 28px 0 9px;
-  border: 1px solid var(--line);
+  border: 1px solid color-mix(in srgb, var(--subtle) 42%, var(--line));
   border-radius: 8px;
   background-color: var(--surface);
   color: var(--ink);
@@ -175,9 +175,11 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .language-picker:last-child { padding-left: 24px; }
 .language-caption { flex: 0 0 auto; color: var(--muted); font-size: 10px; }
 .select-wrap { position: relative; display: inline-flex; align-items: center; min-width: 0; }
-.select-wrap select { max-width: 210px; appearance: none; -webkit-appearance: none; padding: 5px 21px 5px 1px; border: 0; outline: 0; color: var(--ink); background-color: transparent; font-size: 12px; font-weight: 700; cursor: pointer; }
+.select-wrap select { max-width: 210px; appearance: none; -webkit-appearance: none; padding: 6px 26px 6px 10px; border: 1px solid color-mix(in srgb, var(--subtle) 42%, var(--line)); border-radius: 8px; outline: 0; color: var(--ink); background-color: var(--surface-soft); font-size: 12px; font-weight: 700; cursor: pointer; transition: border-color .15s ease, box-shadow .15s ease; }
+.select-wrap select:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.select-wrap select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
 .select-wrap select option { color: var(--ink); background-color: var(--surface); }
-.select-wrap svg { position: absolute; right: 0; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--muted); }
+.select-wrap svg { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--muted); }
 .swap-button { width: 32px; height: 32px; display: grid; place-items: center; justify-self: center; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); background: var(--surface); transition: .18s ease; }
 .swap-button:hover { transform: rotate(180deg); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); color: var(--accent); background: var(--accent-soft); }
 
@@ -361,7 +363,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   .model-form-actions { flex-wrap: wrap; }
   .language-bar { grid-template-columns: minmax(0, 1fr) 36px minmax(0, 1fr); padding-inline: 10px; }
   .language-picker:last-child { padding-left: 8px; }
-  .select-wrap select { padding-right: 18px; }
+  .select-wrap select { padding: 6px 24px 6px 9px; }
   .text-panel { padding-inline: 12px; }
   .mic-button { min-height: 40px; }
   .cancel-recording-button { min-height: 40px; }
