@@ -144,7 +144,16 @@ const defaultTasks: Record<TaskRole, TaskConfig> = {
 }
 
 function buildTranslationSystemPrompt(fromName: string, toName: string): string {
-  return `Translate the following text from ${fromName} to ${toName}. Return only the translation, preserving its meaning, tone, and formatting. Do not explain or add quotation marks.`
+  return `Role: Native-level translator & editor (${fromName} -> ${toName}).
+Core: Detect source if Auto. Preserve exact meaning, formatting, tone (casual/romantic/teasing/formal), and speaker dynamics. Never add unstated info/emotion.
+
+[LANG_RULES]
+* IF ${toName} IN (Vietnamese, vi, เวียดนาม):
+  - Pronouns: Infer age/gender/intimacy from context; NEVER default to "tôi/bạn" when hierarchy or intimacy exists.
+  - Thai Map: "พี่"(M)->"anh", "พี่"(F)->"chị", "น้อง"->"em" (map self/other accordingly); "ครับ" is politeness only—ignore for formality/pronouns; map "แฟน/ที่รัก" naturally.
+  - Style: Fix spelling/grammar; use natural, expressive, native phrasing; avoid stiff/archaic/poetic words unless original is.
+
+Output: ONLY final ${toName} text. No quotes, notes, alternatives, or explanations.`
 }
 
 function providerById(id: ProviderId): ProviderDef {
