@@ -1,3 +1,4 @@
+/* style.css */
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
@@ -144,23 +145,8 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .language-picker:last-child { padding-left: 24px; }
 .language-caption { flex: 0 0 auto; color: var(--muted); font-size: 10px; }
 .select-wrap { position: relative; display: inline-flex; align-items: center; min-width: 0; }
-.select-wrap select {
-  max-width: 210px;
-  appearance: none;
-  padding: 5px 21px 5px 1px;
-  border: 0;
-  outline: 0;
-  color: var(--ink);
-  background-color: transparent;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.select-wrap select option {
-  color: var(--ink);
-  background-color: var(--surface);
-}
+.select-wrap select { max-width: 210px; appearance: none; padding: 5px 21px 5px 1px; border: 0; outline: 0; color: var(--ink); background-color: transparent; font-size: 12px; font-weight: 700; cursor: pointer; }
+.select-wrap select option { color: var(--ink); background-color: var(--surface); }
 .select-wrap svg { position: absolute; right: 0; pointer-events: none; color: var(--muted); }
 .swap-button { width: 32px; height: 32px; display: grid; place-items: center; justify-self: center; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); background: var(--surface); transition: .18s ease; }
 .swap-button:hover { transform: rotate(180deg); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); color: var(--accent); background: var(--accent-soft); }

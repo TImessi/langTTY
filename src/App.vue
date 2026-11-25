@@ -1,4 +1,3 @@
-<!-- App.vue -->
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import {
@@ -1096,6 +1095,7 @@ async function translateText() {
     trackModelUsage(provider, model, response)
     if (!translated) throw new Error('The translation service returned an empty response.')
     translatedText.value = translated
+    translationNeedsSpeech.value = true
     shouldGenerateSpeech = true
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t.value.translationError
@@ -1249,10 +1249,8 @@ async function generateSpeech(autoPlay = false) {
   }
 
   isGeneratingAudio.value = true
-  if (!autoPlay) {
-    errorMessage.value = ''
-    isTtsQuotaExceeded.value = false
-  }
+  errorMessage.value = ''
+  isTtsQuotaExceeded.value = false
   playbackNeedsUserAction.value = false
   revokeAudioUrl()
 
@@ -1263,19 +1261,21 @@ async function generateSpeech(autoPlay = false) {
     translationNeedsSpeech.value = false
     if (autoPlay) {
       await nextTick()
-      try {
-        await audioPlayer.value?.play()
-      } catch {
-        playbackNeedsUserAction.value = true
+      const el = audioPlayer.value
+      if (el) {
+        el.load()
+        try {
+          await el.play()
+        } catch {
+          playbackNeedsUserAction.value = true
+        }
       }
     }
   } catch (error) {
+    translationNeedsSpeech.value = true
     const message = error instanceof Error ? error.message : t.value.ttsError
-    const quotaExceeded = /quota exceeded|free tier|rate limit|429/i.test(message)
-    if (!autoPlay) {
-      isTtsQuotaExceeded.value = quotaExceeded
-      errorMessage.value = quotaExceeded ? t.value.ttsQuotaError : message
-    }
+    isTtsQuotaExceeded.value = /quota exceeded|free tier|rate limit|429/i.test(message)
+    errorMessage.value = isTtsQuotaExceeded.value ? t.value.ttsQuotaError : message
   } finally {
     isGeneratingAudio.value = false
   }
@@ -1344,17 +1344,17 @@ onBeforeUnmount(() => {
       </a>
       <p class="header-tagline hidden sm:block">{{ t.tagline }}</p>
       <div class="header-actions">
-        <button class="icon-button language-toggle" :aria-label="t.uiLanguage" :title="t.uiLanguage" @click="toggleUiLanguage">
+        <button type="button" class="icon-button language-toggle" :aria-label="t.uiLanguage" :title="t.uiLanguage" @click="toggleUiLanguage">
           <Languages :size="17" /><span>{{ uiLanguageName }}</span>
         </button>
-        <button class="icon-button" :aria-label="darkMode ? t.themeLight : t.themeDark" :title="darkMode ? t.themeLight : t.themeDark" @click="darkMode = !darkMode">
+        <button type="button" class="icon-button" :aria-label="darkMode ? t.themeLight : t.themeDark" :title="darkMode ? t.themeLight : t.themeDark" @click="darkMode = !darkMode">
           <Sun v-if="darkMode" :size="18" />
           <Moon v-else :size="18" />
         </button>
-        <button class="icon-button customize-button" :aria-label="t.customize" :title="t.customize" @click="showModelSettings = !showModelSettings">
+        <button type="button" class="icon-button customize-button" :aria-label="t.customize" :title="t.customize" @click="showModelSettings = !showModelSettings">
           <SlidersHorizontal :size="17" /><span class="customize-label">{{ t.customize }}</span>
         </button>
-        <button class="icon-button settings-button" :aria-label="t.apiKeys" :title="t.apiKeys" @click="showSettings = !showSettings">
+        <button type="button" class="icon-button settings-button" :aria-label="t.apiKeys" :title="t.apiKeys" @click="showSettings = !showSettings">
           <Settings2 :size="18" />
           <span v-if="hasAnyKey" class="key-indicator" />
         </button>
@@ -1522,7 +1522,7 @@ onBeforeUnmount(() => {
             </div>
             <div class="panel-footer result-footer">
               <button
-                v-if="translationNeedsSpeech && translatedText"
+                v-if="(translationNeedsSpeech || audioUrl) && translatedText"
                 type="button"
                 class="mic-button"
                 :disabled="isGeneratingAudio"
